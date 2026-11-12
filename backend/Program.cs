@@ -1,8 +1,20 @@
 using EspaceShoppingPlus.Api.Interfaces;
 using EspaceShoppingPlus.Api.Services;
+using Microsoft.AspNetCore.HttpOverrides;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+var forwardedHeadersEnabled = builder.Configuration.GetValue<bool>("ForwardedHeaders:Enabled");
+
+if (forwardedHeadersEnabled)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedProto;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
 
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
@@ -23,11 +35,16 @@ builder.Services.AddScoped<IStoreService>(services =>
 
 var app = builder.Build();
 
+if (forwardedHeadersEnabled)
+{
+    app.UseForwardedHeaders();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-else
+else if (!forwardedHeadersEnabled)
 {
     app.UseHttpsRedirection();
 }

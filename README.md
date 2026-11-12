@@ -30,4 +30,6 @@ La boutique est disponible sur `http://localhost:3000` et l’administration sur
 
 Pour le déploiement, configurez les variables d’environnement de chaque application et déployez-les derrière des domaines/origines compatibles avec le partage des cookies Better Auth. Ne publiez jamais les fichiers `.env` ni les clés privées.
 
+Les étapes de déploiement sur Railway sont décrites dans [RAILWAY.md](./RAILWAY.md).
+
 Pour les paiements SasPay, configurez côté backend `SasPay__ApiKey`, `SasPay__WebhookSecret` et `SasPay__ReturnBaseUrl`. L’application utilise le checkout hébergé au Cameroun en XAF; appliquez également `npm run db:migrate` dans `frontend` et configurez dans le tableau de bord SasPay le webhook `https://<hôte-backend>/api/webhooks/saspay` avec les événements `transaction.success`, `transaction.failed` et `transaction.cancelled`. Les détails sont dans [la documentation SasPay du frontend](./frontend/README.md#paiement-saspay).
