@@ -8,8 +8,9 @@ import AccountPage from "../../components/auth/AccountPage";
 import { getAuth } from "../../lib/auth";
 
 export const metadata: Metadata = {
-  title: "Mon espace client | Espace Shopping Plus",
+  title: "Mon espace client",
   description: "Gérez votre espace client Espace Shopping Plus.",
+  robots: { index: false, follow: false },
 };
 
 export default function AccountOverviewPage() {

@@ -5,6 +5,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Superadmin | Espace Shopping Plus",
   description: "Administration de la boutique Espace Shopping Plus.",
+  robots: { index: false, follow: false },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

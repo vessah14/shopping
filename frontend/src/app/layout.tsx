@@ -1,9 +1,34 @@
 import type { Metadata } from "next";
+import { siteUrl } from "../lib/seo";
 import "./globals.css";
 
+const siteName = "Espace Shopping Plus";
+const description = "Boutique de mode, beauté et cheveux à Douala, Cameroun. Découvrez nos nouveautés et commandez facilement sur WhatsApp.";
+const socialImage = "/espace-shopping-plus/logo-principal.png";
+
 export const metadata: Metadata = {
-  title: "Espace Shopping Plus | Mode, beauté et cheveux",
-  description: "Découvrez la sélection mode, beauté et cheveux d’Espace Shopping Plus au Cameroun. Renseignements et commandes sur WhatsApp.",
+  metadataBase: siteUrl,
+  title: {
+    default: "Espace Shopping Plus | Mode et beauté à Douala",
+    template: "%s | Espace Shopping Plus",
+  },
+  description,
+  applicationName: siteName,
+  openGraph: {
+    type: "website",
+    locale: "fr_CM",
+    url: siteUrl,
+    siteName,
+    title: "Espace Shopping Plus | Mode et beauté à Douala",
+    description,
+    images: [{ url: socialImage, alt: siteName }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Espace Shopping Plus | Mode et beauté à Douala",
+    description,
+    images: [socialImage],
+  },
   icons: {
     icon: "/icon.png",
   },

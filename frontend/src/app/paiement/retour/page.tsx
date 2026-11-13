@@ -1,7 +1,12 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import PaymentStatusPoller from "./payment-status-poller";
 
 export const instant = false;
+export const metadata: Metadata = {
+  title: "État du paiement",
+  robots: { index: false, follow: false },
+};
 
 type PaymentReturnPageProps = {
   searchParams: Promise<{ orderId?: string | string[] }>;

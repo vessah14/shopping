@@ -5,8 +5,18 @@ import SiteHeader from "../../components/layout/SiteHeader";
 import SiteFooter from "../../components/layout/SiteFooter";
 import ContactForm from "../../components/contact/ContactForm";
 import { contactPhone, storeAddress, storeMapUrl, whatsappUrl } from "../../data/contact";
+import { absoluteSiteUrl } from "../../lib/seo";
 
-export const metadata: Metadata = { title: "Contact | Espace Shopping Plus", description: "Une question sur un produit ? Écrivez à Espace Shopping Plus sur WhatsApp." };
+export const metadata: Metadata = {
+  title: "Contact",
+  description: "Contactez Espace Shopping Plus à Douala pour une question sur un produit, une commande ou la livraison.",
+  alternates: { canonical: absoluteSiteUrl("/contact") },
+  openGraph: {
+    title: "Contacter Espace Shopping Plus",
+    description: "Une question sur un produit ou une commande ? Contactez notre boutique à Douala.",
+    url: absoluteSiteUrl("/contact"),
+  },
+};
 
 export default function ContactPage() {
   return (
