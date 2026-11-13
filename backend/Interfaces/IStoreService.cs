@@ -37,4 +37,6 @@ public interface IStoreService
         decimal amount,
         string currency,
         CancellationToken cancellationToken);
+
+    Task RecordSimulatedSellerPayoutsAsync(Guid orderId, CancellationToken cancellationToken);
 }

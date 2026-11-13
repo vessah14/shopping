@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
   if (section === "products") {
     const result = await pool.query(
       `SELECT slug, name, price_cfa AS "priceCfa", original_price_cfa AS "originalPriceCfa", image, images, category, description, sizes, colors,
+              seller_name AS "sellerName", seller_mobile_money AS "sellerMobileMoney",
               stock_quantity AS "stockQuantity", is_available AS "isAvailable", is_active AS active, is_promo AS "isPromo"
        FROM store_products ORDER BY updated_at DESC, name`,
     );
@@ -102,6 +103,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(result.rows);
   }
 
+  if (section === "payouts") {
+    const result = await pool.query(
+      `SELECT id, order_id AS "orderId", seller_name AS "sellerName", destination,
+              amount_cfa AS "amountCfa", status, created_at AS "createdAt"
+       FROM store_seller_payouts ORDER BY created_at DESC LIMIT 500`,
+    );
+    return NextResponse.json(result.rows);
+  }
+
   if (section === "customers") {
     const result = await pool.query(
       `SELECT id, name, email, "createdAt" AS "createdAt"
@@ -115,16 +125,14 @@ export async function GET(request: NextRequest) {
 
   if (section === "announcements") {
     const result = await pool.query(
-      `SELECT message, is_enabled AS enabled, starts_at AS "startsAt",
-              ends_at AS "endsAt", updated_at AS "updatedAt",
-              (is_enabled AND starts_at <= now() AND (ends_at IS NULL OR ends_at > now())) AS "currentlyActive"
-       FROM store_announcements
-       WHERE id = 1`,
+      `SELECT id::integer AS id, message, is_enabled AS enabled, starts_at AS "startsAt",
+              ends_at AS "endsAt", created_at AS "createdAt", updated_at AS "updatedAt",
+              (is_enabled AND starts_at <= now() AND (ends_at IS NULL OR ends_at > now())) AS "currentlyActive",
+              (is_enabled AND starts_at > now()) AS "isScheduled"
+       FROM store_announcement_posts
+       ORDER BY created_at DESC, id DESC`,
     );
-    if (!result.rows[0]) {
-      return NextResponse.json({ error: "La configuration des annonces est introuvable. Relancez la migration de la boutique." }, { status: 503 });
-    }
-    return NextResponse.json(result.rows[0]);
+    return NextResponse.json(result.rows);
   }
 
   return NextResponse.json({ error: "Section inconnue." }, { status: 404 });
@@ -137,6 +145,26 @@ export async function POST(request: NextRequest) {
   const auth = await guard();
   if ("response" in auth) return auth.response;
   const pool = getDatabasePool();
+
+  if (entity === "announcement") {
+    const message = readString(body, "message", 280);
+    const startsAt = readString(body, "startsAt", 40);
+    const endsAt = body.endsAt === null ? null : readString(body, "endsAt", 40);
+    const startsAtDate = startsAt ? new Date(startsAt) : null;
+    const endsAtDate = endsAt ? new Date(endsAt) : null;
+    if (!message || typeof body.enabled !== "boolean" ||
+        !startsAtDate || Number.isNaN(startsAtDate.getTime()) ||
+        (body.endsAt !== null && !endsAtDate) ||
+        (endsAtDate && (Number.isNaN(endsAtDate.getTime()) || endsAtDate.getTime() <= startsAtDate.getTime()))) {
+      return NextResponse.json({ error: "Vérifiez le texte et les dates de l’annonce. La date de fin doit être postérieure à la date de début." }, { status: 400 });
+    }
+    const result = await pool.query(
+      `INSERT INTO store_announcement_posts (message, is_enabled, starts_at, ends_at)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [message, body.enabled, startsAtDate, endsAtDate],
+    );
+    return NextResponse.json({ id: result.rows[0].id }, { status: 201 });
+  }
 
   if (entity === "category") {
     const name = readString(body, "name", 100);
@@ -169,7 +197,9 @@ export async function POST(request: NextRequest) {
     const stockQuantity = readInteger(body, "stockQuantity", 0, 1_000_000);
     const sizes = body.sizes === undefined ? [] : readStringArray(body, "sizes");
     const colors = readStringArray(body, "colors");
-    if (!name || !image || !images || !category || !description || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || typeof body.isPromo !== "boolean") {
+    const sellerName = readString(body, "sellerName", 140);
+    const sellerMobileMoney = body.sellerMobileMoney === "" ? null : readString(body, "sellerMobileMoney", 40);
+    if (!name || !image || !images || !category || !description || !sellerName || (body.sellerMobileMoney !== "" && sellerMobileMoney === null) || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || typeof body.isPromo !== "boolean") {
       return NextResponse.json({ error: "Vérifiez les champs du produit et ses images (10 maximum)." }, { status: 400 });
     }
     if (body.isPromo ? originalPriceCfa === null || originalPriceCfa <= priceCfa : originalPriceCfa !== null) return NextResponse.json({ error: "Une promotion exige un ancien prix supérieur au prix actuel. Sans promotion, laissez ce champ vide." }, { status: 400 });
@@ -188,10 +218,10 @@ export async function POST(request: NextRequest) {
     const isAvailable = body.isAvailable === true && stockQuantity > 0;
     const result = await pool.query(
       `INSERT INTO store_products
-        (slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors, stock_quantity, is_available, is_promo)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13)
+        (slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors, stock_quantity, is_available, is_promo, seller_name, seller_mobile_money)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15)
        RETURNING slug`,
-      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), stockQuantity, isAvailable, body.isPromo],
+      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), stockQuantity, isAvailable, body.isPromo, sellerName, sellerMobileMoney],
     );
     return NextResponse.json({ slug: result.rows[0].slug }, { status: 201 });
   }
@@ -208,27 +238,26 @@ export async function PATCH(request: NextRequest) {
   const pool = getDatabasePool();
 
   if (entity === "announcement") {
+    const id = readInteger(body, "id", 1, 2_147_483_647);
     const message = readString(body, "message", 280);
     const startsAt = readString(body, "startsAt", 40);
     const endsAt = body.endsAt === null ? null : readString(body, "endsAt", 40);
     const startsAtDate = startsAt ? new Date(startsAt) : null;
     const endsAtDate = endsAt ? new Date(endsAt) : null;
-    if (!message || typeof body.enabled !== "boolean" ||
+    if (id === null || !message || typeof body.enabled !== "boolean" ||
         !startsAtDate || Number.isNaN(startsAtDate.getTime()) ||
         (body.endsAt !== null && !endsAtDate) ||
         (endsAtDate && (Number.isNaN(endsAtDate.getTime()) || endsAtDate.getTime() <= startsAtDate.getTime()))) {
       return NextResponse.json({ error: "Vérifiez le texte et les dates de l’annonce. La date de fin doit être postérieure à la date de début." }, { status: 400 });
     }
     const result = await pool.query(
-      `UPDATE store_announcements
-       SET message=$1, is_enabled=$2, starts_at=$3, ends_at=$4, updated_at=now()
-       WHERE id=1
+      `UPDATE store_announcement_posts
+       SET message=$2, is_enabled=$3, starts_at=$4, ends_at=$5, updated_at=now()
+       WHERE id=$1
        RETURNING id`,
-      [message, body.enabled, startsAtDate, endsAtDate],
+      [id, message, body.enabled, startsAtDate, endsAtDate],
     );
-    if (!result.rowCount) {
-      return NextResponse.json({ error: "La configuration des annonces est introuvable. Relancez la migration de la boutique." }, { status: 503 });
-    }
+    if (!result.rowCount) return NextResponse.json({ error: "Annonce introuvable." }, { status: 404 });
     return NextResponse.json({ success: true });
   }
 
@@ -251,7 +280,9 @@ export async function PATCH(request: NextRequest) {
     const stockQuantity = readInteger(body, "stockQuantity", 0, 1_000_000);
     const sizes = body.sizes === undefined ? [] : readStringArray(body, "sizes");
     const colors = readStringArray(body, "colors");
-    if (!slug || !name || !image || !images || !category || !description || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || typeof body.isAvailable !== "boolean" || typeof body.isPromo !== "boolean") {
+    const sellerName = readString(body, "sellerName", 140);
+    const sellerMobileMoney = body.sellerMobileMoney === "" ? null : readString(body, "sellerMobileMoney", 40);
+    if (!slug || !name || !image || !images || !category || !description || !sellerName || (body.sellerMobileMoney !== "" && sellerMobileMoney === null) || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || typeof body.isAvailable !== "boolean" || typeof body.isPromo !== "boolean") {
       return NextResponse.json({ error: "Vérifiez les champs du produit et ses images (10 maximum)." }, { status: 400 });
     }
     if (body.isAvailable && stockQuantity === 0) return NextResponse.json({ error: "Ajoutez du stock avant de marquer cet article disponible." }, { status: 400 });
@@ -262,9 +293,10 @@ export async function PATCH(request: NextRequest) {
     if (!activeCategory.rows[0]?.is_active) return NextResponse.json({ error: "Choisissez une catégorie active." }, { status: 400 });
     const result = await pool.query(
       `UPDATE store_products SET name=$2, price_cfa=$3, original_price_cfa=$4, image=$5, images=$6::jsonb, category=$7, description=$8,
-        sizes=$9::jsonb, colors=$10::jsonb, stock_quantity=$11, is_available=$12, is_promo=$13, updated_at=now()
+        sizes=$9::jsonb, colors=$10::jsonb, stock_quantity=$11, is_available=$12, is_promo=$13,
+        seller_name=$14, seller_mobile_money=$15, updated_at=now()
        WHERE slug=$1 RETURNING slug`,
-      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), stockQuantity, body.isAvailable, body.isPromo],
+      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), stockQuantity, body.isAvailable, body.isPromo, sellerName, sellerMobileMoney],
     );
     if (!result.rowCount) return NextResponse.json({ error: "Produit introuvable." }, { status: 404 });
     return NextResponse.json({ success: true });
@@ -350,6 +382,13 @@ export async function DELETE(request: NextRequest) {
   const slug = request.nextUrl.searchParams.get("slug");
   const auth = await guard();
   if ("response" in auth) return auth.response;
+  if (entity === "announcement") {
+    const id = Number(request.nextUrl.searchParams.get("id"));
+    if (!Number.isSafeInteger(id) || id < 1) return NextResponse.json({ error: "Annonce invalide." }, { status: 400 });
+    const result = await getDatabasePool().query("DELETE FROM store_announcement_posts WHERE id=$1 RETURNING id", [id]);
+    if (!result.rowCount) return NextResponse.json({ error: "Annonce introuvable." }, { status: 404 });
+    return NextResponse.json({ success: true });
+  }
   if (!slug || entity !== "product") {
     return NextResponse.json({ error: "Ressource invalide." }, { status: 400 });
   }

@@ -67,10 +67,13 @@ Les produits importés commencent avec un stock à zéro et sont marqués indisp
 
 Le checkout hébergé SasPay est disponible pour les commandes au Cameroun (XAF). Configurez le backend .NET avec `SasPay__ApiKey`, `SasPay__WebhookSecret` et `SasPay__ReturnBaseUrl` (par exemple `http://localhost:3000` en développement). Utilisez une clé `sk_test_...` pour les essais, puis une clé `sk_live_...` en production; ne placez jamais ces secrets dans le frontend.
 
+Le suivi des versements vendeurs est actuellement une simulation : configurez le nom et le numéro Mobile Money dans la fiche produit du superadmin, puis consultez **Versements vendeurs** après une commande payée et confirmée. Aucun transfert au vendeur n’est déclenché. Exécutez `npm run db:migrate` pour ajouter les colonnes vendeur et la table de suivi à une base existante.
+
 Après configuration, relancez `npm run db:migrate` pour ajouter les champs de session SasPay et autoriser ce moyen de paiement. Dans le tableau de bord SasPay, configurez l’URL publique `https://<hôte-backend>/api/webhooks/saspay`, copiez son secret de signature dans `SasPay__WebhookSecret`, et abonnez le webhook à `transaction.success`, `transaction.failed` et `transaction.cancelled`. Le backend vérifie la signature horodatée puis revérifie l’état, le montant et la devise via l’API SasPay avant de mettre à jour la commande. Le retour navigateur ne confirme jamais un paiement à lui seul.
 
 ### Annonces de la boutique
-
+Dans le superadmin, ouvrez **Annonces** pour consulter le tableau, créer une annonce, modifier ses dates ou son texte, la désactiver ou la supprimer. Toutes les annonces actives défilent dans le bandeau de la boutique. Les annonces déjà enregistrées sont reprises lors de la migration.
+Après cette mise à jour, exécutez `npm run db:migrate` depuis `frontend` pour créer la table des annonces et migrer la configuration existante.
 Dans le superadmin, ouvrez **Annonces** pour modifier le bandeau, choisir ses dates de début et de fin, puis le publier ou le désactiver. Le visiteur peut fermer le bandeau pour sa session; une annonce modifiée s’affiche de nouveau. Après la mise à jour, exécutez `npm run db:migrate` depuis `frontend` pour créer la configuration des annonces.
 
 La section commentaires de l’accueil est publique : chacun peut publier un nom et un message, conservés dans PostgreSQL. Après l’ajout de cette fonctionnalité, relancez `npm run db:migrate` pour créer la table des commentaires dans une base existante.

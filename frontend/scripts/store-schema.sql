@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS store_products (
 
 ALTER TABLE store_products ADD COLUMN IF NOT EXISTS original_price_cfa integer;
 ALTER TABLE store_products ADD COLUMN IF NOT EXISTS images jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE store_products ADD COLUMN IF NOT EXISTS seller_name text NOT NULL DEFAULT 'Espace Shopping Plus';
+ALTER TABLE store_products ADD COLUMN IF NOT EXISTS seller_mobile_money text;
 UPDATE store_products SET images = jsonb_build_array(image) WHERE images = '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS store_orders (
@@ -75,6 +77,21 @@ CREATE TABLE IF NOT EXISTS store_order_items (
   line_total_cfa integer NOT NULL CHECK (line_total_cfa >= 0)
 );
 
+-- Simulation-only seller ledger. No money is transferred by this table.
+CREATE TABLE IF NOT EXISTS store_seller_payouts (
+  id bigserial PRIMARY KEY,
+  order_id uuid NOT NULL REFERENCES store_orders(id) ON DELETE RESTRICT,
+  seller_name text NOT NULL,
+  destination text NOT NULL,
+  amount_cfa integer NOT NULL CHECK (amount_cfa > 0),
+  status text NOT NULL DEFAULT 'simulated' CHECK (status IN ('simulated', 'ready', 'paid', 'failed')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (order_id, seller_name, destination)
+);
+
+CREATE INDEX IF NOT EXISTS store_seller_payouts_status_created_idx
+  ON store_seller_payouts (status, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS store_comments (
   id bigserial PRIMARY KEY,
   author_name text NOT NULL CHECK (char_length(btrim(author_name)) BETWEEN 2 AND 80),
@@ -95,6 +112,24 @@ CREATE TABLE IF NOT EXISTS store_announcements (
 INSERT INTO store_announcements (id, message, is_enabled)
 VALUES (1, 'Bienvenue chez Espace Shopping Plus.', false)
 ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS store_announcement_posts (
+  id bigserial PRIMARY KEY,
+  message text NOT NULL CHECK (char_length(btrim(message)) BETWEEN 1 AND 280),
+  is_enabled boolean NOT NULL DEFAULT false,
+  starts_at timestamptz NOT NULL DEFAULT now(),
+  ends_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  legacy_source_id smallint UNIQUE,
+  CONSTRAINT store_announcement_posts_valid_schedule CHECK (ends_at IS NULL OR ends_at > starts_at)
+);
+
+INSERT INTO store_announcement_posts (message, is_enabled, starts_at, ends_at, created_at, updated_at, legacy_source_id)
+SELECT message, is_enabled, starts_at, ends_at, updated_at, updated_at, id
+FROM store_announcements
+WHERE id = 1
+ON CONFLICT (legacy_source_id) DO NOTHING;
 
 CREATE INDEX IF NOT EXISTS store_orders_customer_created_idx
   ON store_orders (customer_id, created_at DESC);

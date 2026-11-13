@@ -11,104 +11,89 @@ type StoreAnnouncement = {
 };
 
 function isAnnouncement(value: unknown): value is StoreAnnouncement {
-  return typeof value === "object" &&
-    value !== null &&
+  return typeof value === "object" && value !== null &&
     "id" in value && typeof value.id === "number" &&
     "message" in value && typeof value.message === "string" &&
     "updatedAt" in value && typeof value.updatedAt === "string" &&
     "startsAt" in value && typeof value.startsAt === "string" && Number.isFinite(Date.parse(value.startsAt)) &&
-    "endsAt" in value && (typeof value.endsAt === "string" && Number.isFinite(Date.parse(value.endsAt)) || value.endsAt === null);
+    "endsAt" in value && (value.endsAt === null || typeof value.endsAt === "string" && Number.isFinite(Date.parse(value.endsAt)));
+}
+
+function dismissalKey(announcement: StoreAnnouncement) {
+  return `store-announcement-dismissed:${announcement.id}:${announcement.updatedAt}`;
 }
 
 export default function StoreAnnouncementBanner() {
-  const [announcement, setAnnouncement] = useState<StoreAnnouncement | null>(null);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [announcements, setAnnouncements] = useState<StoreAnnouncement[]>([]);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [now, setNow] = useState(0);
 
   useEffect(() => {
     let active = true;
 
-    async function loadAnnouncement() {
+    async function loadAnnouncements() {
       try {
         const response = await fetch("/api/announcements", { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error(`Impossible de charger l’annonce (HTTP ${response.status}).`);
-        }
-
+        if (!response.ok) throw new Error(`Impossible de charger les annonces (HTTP ${response.status}).`);
         const result: unknown = await response.json();
-        if (result === null) return;
-        if (!isAnnouncement(result)) {
-          throw new Error("La réponse de l’annonce est invalide.");
+        if (!Array.isArray(result) || !result.every(isAnnouncement)) {
+          throw new Error("La réponse des annonces est invalide.");
         }
-
-        const dismissalKey = `store-announcement-dismissed:${result.id}:${result.updatedAt}`;
         if (!active) return;
-        try {
-          if (sessionStorage.getItem(dismissalKey)) return;
-        } catch (error) {
-          console.error("Store announcement dismissal could not be read.", error);
-        }
-        setHasStarted(new Date(result.startsAt).getTime() <= Date.now());
-        setAnnouncement(result);
+        setAnnouncements(result);
+        setNow(Date.now());
       } catch (error) {
-        console.error("Store announcement could not be loaded.", error);
+        console.error("Store announcements could not be loaded.", error);
       }
     }
 
-    void loadAnnouncement();
+    void loadAnnouncements();
+    const refreshTimer = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => {
       active = false;
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
-  useEffect(() => {
-    if (!announcement) return;
-    let clearStart: (() => void) | undefined;
-    let clearEnd: (() => void) | undefined;
-
-    function schedule(timestamp: number, callback: () => void) {
-      let timeout: number;
-      function checkTime() {
-        const remaining = timestamp - Date.now();
-        if (remaining <= 0) {
-          callback();
-          return;
-        }
-        timeout = window.setTimeout(checkTime, Math.min(remaining, 2_147_000_000));
-      }
-      timeout = window.setTimeout(checkTime, Math.min(Math.max(timestamp - Date.now(), 0), 2_147_000_000));
-      return () => window.clearTimeout(timeout);
+  const visibleAnnouncements = announcements.filter((announcement) => {
+    const startsAt = Date.parse(announcement.startsAt);
+    const endsAt = announcement.endsAt ? Date.parse(announcement.endsAt) : Number.POSITIVE_INFINITY;
+    const key = dismissalKey(announcement);
+    let dismissedInSession = dismissed.has(key);
+    try {
+      dismissedInSession ||= Boolean(sessionStorage.getItem(key));
+    } catch (error) {
+      console.error("Store announcement dismissal could not be read.", error);
     }
+    return startsAt <= now && endsAt > now && !dismissedInSession;
+  });
 
-    const startsAt = new Date(announcement.startsAt).getTime();
-    if (startsAt > Date.now()) clearStart = schedule(startsAt, () => setHasStarted(true));
-    if (announcement.endsAt) {
-      clearEnd = schedule(new Date(announcement.endsAt).getTime(), () => setAnnouncement(null));
-    }
-    return () => {
-      clearStart?.();
-      clearEnd?.();
-    };
-  }, [announcement]);
-
-  if (!announcement || !hasStarted) return null;
-  const visibleAnnouncement = announcement;
+  if (!visibleAnnouncements.length) return null;
+  const message = visibleAnnouncements.map(({ message: text }) => text).join("   •   ");
 
   function dismiss() {
-    try {
-      sessionStorage.setItem(
-        `store-announcement-dismissed:${visibleAnnouncement.id}:${visibleAnnouncement.updatedAt}`,
-        "true",
-      );
-    } catch (error) {
-      console.error("Store announcement dismissal could not be saved.", error);
+    const nextDismissed = new Set(dismissed);
+    for (const announcement of visibleAnnouncements) {
+      const key = dismissalKey(announcement);
+      nextDismissed.add(key);
+      try {
+        sessionStorage.setItem(key, "true");
+      } catch (error) {
+        console.error("Store announcement dismissal could not be saved.", error);
+      }
     }
-    setAnnouncement(null);
+    setDismissed(nextDismissed);
   }
 
   return (
-    <aside className="store-announcement" aria-label="Annonce de la boutique" role="status">
-      <p>{visibleAnnouncement.message}</p>
-      <button type="button" onClick={dismiss} aria-label="Fermer l’annonce">×</button>
+    <aside className="store-announcement" aria-label="Annonces de la boutique" role="status">
+      <div className="store-announcement-viewport" aria-label={message}>
+        <p className="store-announcement-track">
+          <span>{message}</span>
+          <span aria-hidden="true">{message}</span>
+        </p>
+      </div>
+      <button type="button" onClick={dismiss} aria-label="Fermer les annonces">×</button>
     </aside>
   );
 }

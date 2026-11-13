@@ -11,16 +11,15 @@ export async function GET() {
     startsAt: string;
     endsAt: string | null;
   }>(
-    `SELECT id, message, updated_at AS "updatedAt",
+    `SELECT id::integer AS id, message, updated_at AS "updatedAt",
             starts_at AS "startsAt", ends_at AS "endsAt"
-     FROM store_announcements
-     WHERE id = 1
-       AND is_enabled = true
+     FROM store_announcement_posts
+     WHERE is_enabled = true
        AND (ends_at IS NULL OR ends_at > now())
-     LIMIT 1`,
+     ORDER BY starts_at, id`,
   );
 
-  return NextResponse.json(result.rows[0] ?? null, {
+  return NextResponse.json(result.rows, {
     headers: { "Cache-Control": "no-store" },
   });
 }

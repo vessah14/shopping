@@ -114,6 +114,30 @@ public sealed class StoreService(
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
+    public async Task RecordSimulatedSellerPayoutsAsync(Guid orderId, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            INSERT INTO store_seller_payouts (order_id, seller_name, destination, amount_cfa)
+            SELECT i.order_id,
+                   p.seller_name,
+                   COALESCE(NULLIF(btrim(p.seller_mobile_money), ''), 'DESTINATION À CONFIGURER'),
+                   SUM(i.line_total_cfa)::integer
+            FROM store_order_items i
+            JOIN store_products p ON p.slug = i.product_slug
+            JOIN store_orders o ON o.id = i.order_id
+            WHERE i.order_id = @orderId
+              AND o.payment_status = 'confirmed'
+              AND p.seller_mobile_money IS NOT NULL
+              AND btrim(p.seller_mobile_money) <> ''
+            GROUP BY i.order_id, p.seller_name, p.seller_mobile_money
+            ON CONFLICT (order_id, seller_name, destination) DO NOTHING
+            """;
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("orderId", orderId);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<bool> FailSasPayOrderAndRestoreStockAsync(
         Guid orderId,
         CancellationToken cancellationToken)
@@ -279,7 +303,8 @@ public sealed class StoreService(
         var sql = """
             SELECT p.slug, p.name, p.price_cfa, p.original_price_cfa, p.image, p.images::text, p.category, p.description,
                    p.sizes::text, p.colors::text, p.stock_quantity,
-                   (p.is_available AND p.stock_quantity > 0) AS is_available, p.is_active, p.is_promo
+                   (p.is_available AND p.stock_quantity > 0) AS is_available, p.is_active, p.is_promo,
+                   p.seller_name
             FROM store_products p
             WHERE p.is_active = true
               AND EXISTS (
@@ -313,7 +338,8 @@ public sealed class StoreService(
                 reader.GetInt32(10),
                 reader.GetBoolean(11),
                 reader.GetBoolean(12),
-                reader.GetBoolean(13)));
+                reader.GetBoolean(13),
+                reader.GetString(14)));
         }
 
         return products;

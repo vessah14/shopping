@@ -153,7 +153,6 @@ export default function SiteHeader() {
     <>
       <StoreAnnouncementBanner />
       <div className="announcement">
-        <span><Icon name="truck" /> Livraison offerte dès 50.000 FCFA d’achat</span>
         <span><Icon name="headphones" /> Commandez sur WhatsApp</span>
         <span className="social-follow">Suivez-nous <a href="https://www.instagram.com/espaceshopping_p/" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><Icon name="instagram" /></a><a href="https://www.facebook.com/share/1Fk3T3xAUR/" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><Icon name="facebook" /></a><a href="https://www.tiktok.com/@espace.shopping.p" target="_blank" rel="noopener noreferrer" aria-label="TikTok"><Icon name="tiktok" /></a></span>
       </div>

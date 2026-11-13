@@ -110,6 +110,10 @@ public sealed class SasPayWebhookController(
                         verification.Id,
                         orderId);
                 }
+                else if (paymentStatus == "confirmed")
+                {
+                    await storeService.RecordSimulatedSellerPayoutsAsync(orderId, cancellationToken);
+                }
 
                 return Ok();
             }

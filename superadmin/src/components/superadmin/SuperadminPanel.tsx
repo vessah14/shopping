@@ -6,20 +6,24 @@ import Image from "next/image";
 import { productImage } from "@/lib/store-images";
 import StoreImage from "@/components/ui/StoreImage";
 
-type Section = "overview" | "products" | "categories" | "orders" | "customers" | "announcements";
+type Section = "overview" | "products" | "categories" | "orders" | "payouts" | "customers" | "announcements";
 type AnnouncementSettings = {
+  id: number;
   message: string;
   enabled: boolean;
   startsAt: string;
   endsAt: string | null;
+  createdAt: string;
   updatedAt: string;
   currentlyActive: boolean;
+  isScheduled: boolean;
 };
 type Product = {
   slug: string; name: string; priceCfa: number; originalPriceCfa: number | null; image: string; images: string[]; category: string; description: string;
   sizes: string[]; colors: string[]; stockQuantity: number; isAvailable: boolean; active: boolean;
-  isPromo: boolean;
+  isPromo: boolean; sellerName: string; sellerMobileMoney: string | null;
 };
+type SellerPayout = { id: number; orderId: string; sellerName: string; destination: string; amountCfa: number; status: string; createdAt: string };
 type Category = { name: string; slug: string; image: string; active: boolean; featured: boolean; sortOrder: number };
 type OrderItem = { slug: string; name: string; unitPriceCfa: number; quantity: number; lineTotalCfa: number };
 type Order = {
@@ -35,6 +39,7 @@ const sections: { id: Section; label: string }[] = [
   { id: "products", label: "Produits & stock" },
   { id: "categories", label: "Catégories" },
   { id: "orders", label: "Commandes" },
+  { id: "payouts", label: "Versements vendeurs" },
   { id: "customers", label: "Clients" },
   { id: "announcements", label: "Annonces" },
 ];
@@ -44,6 +49,7 @@ const sectionDescriptions: Record<Section, string> = {
   products: "Gérez votre catalogue, les prix et les quantités disponibles.",
   categories: "Organisez les rayons et choisissez ceux qui apparaissent sur l’accueil.",
   orders: "Consultez les commandes et mettez à jour leur préparation et leur paiement.",
+  payouts: "Suivez les montants calculés pour les vendeurs après confirmation du paiement.",
   customers: "Retrouvez les comptes clients inscrits sur la boutique.",
   announcements: "Rédigez une annonce, programmez sa période d’affichage et activez ou désactivez le bandeau.",
 };
@@ -83,6 +89,7 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [editingAnnouncement, setEditingAnnouncement] = useState<AnnouncementSettings | null>(null);
   const loadSequence = useRef(0);
   const currentSection = useRef<Section>("overview");
 
@@ -105,7 +112,7 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "error" in result ? String(result.error) : "Impossible de charger cette section.");
       if (target === "announcements"
-        ? !isAnnouncementSettings(result)
+        ? !Array.isArray(result) || !result.every(isAnnouncementSettings)
         : target === "overview"
           ? (typeof result !== "object" || result === null)
           : !Array.isArray(result)) {
@@ -178,6 +185,8 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
       stockQuantity: Number(form.get("stockQuantity")),
       isAvailable: form.get("isAvailable") === "on",
       isPromo: form.get("isPromo") === "on",
+      sellerName: String(form.get("sellerName") ?? "Espace Shopping Plus"),
+      sellerMobileMoney: String(form.get("sellerMobileMoney") ?? ""),
     };
     void mutate("/api/superadmin", editingProduct ? "PATCH" : "POST", editingProduct ? "Produit mis à jour." : "Produit ajouté.", { entity: "product", ...payload }).then((success) => {
       if (success) { setEditingProduct(null); onSuccess(); }
@@ -227,11 +236,19 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
             const message = values.status ? "Statut de la commande mis à jour." : "Statut du paiement mis à jour.";
             void mutate("/api/superadmin", "PATCH", message, { entity: "order", id: order.id, ...values });
           }} />}
+          {section === "payouts" && <PayoutsSection payouts={data as SellerPayout[]} />}
           {section === "customers" && <CustomersSection customers={data as Customer[]} />}
           {section === "announcements" && <AnnouncementSection
-            settings={data as AnnouncementSettings}
+            announcements={data as AnnouncementSettings[]}
             busy={busy}
-            onSave={(payload) => void mutate("/api/superadmin", "PATCH", "Annonce enregistrée.", { entity: "announcement", ...payload })}
+            editing={editingAnnouncement}
+            setEditing={setEditingAnnouncement}
+            onSave={(payload) => void mutate("/api/superadmin", editingAnnouncement ? "PATCH" : "POST", editingAnnouncement ? "Annonce modifiée." : "Annonce publiée.", { entity: "announcement", ...(editingAnnouncement ? { id: editingAnnouncement.id } : {}), ...payload }).then((success) => { if (success) setEditingAnnouncement(null); })}
+            onDelete={(announcement) => {
+              if (!window.confirm("Supprimer définitivement cette annonce ?")) return;
+              void mutate(`/api/superadmin?entity=announcement&id=${announcement.id}`, "DELETE", "Annonce supprimée.");
+              if (editingAnnouncement?.id === announcement.id) setEditingAnnouncement(null);
+            }}
           />}
         </>}
       </section>
@@ -242,12 +259,15 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
 function isAnnouncementSettings(value: unknown): value is AnnouncementSettings {
   return typeof value === "object" &&
     value !== null &&
+    "id" in value && typeof value.id === "number" &&
     "message" in value && typeof value.message === "string" &&
     "enabled" in value && typeof value.enabled === "boolean" &&
     "startsAt" in value && typeof value.startsAt === "string" &&
     "endsAt" in value && (typeof value.endsAt === "string" || value.endsAt === null) &&
+    "createdAt" in value && typeof value.createdAt === "string" &&
     "updatedAt" in value && typeof value.updatedAt === "string" &&
-    "currentlyActive" in value && typeof value.currentlyActive === "boolean";
+    "currentlyActive" in value && typeof value.currentlyActive === "boolean" &&
+    "isScheduled" in value && typeof value.isScheduled === "boolean";
 }
 
 function toLocalDateTime(value: string) {
@@ -257,10 +277,13 @@ function toLocalDateTime(value: string) {
   return localDate.toISOString().slice(0, 16);
 }
 
-function AnnouncementSection({ settings, busy, onSave }: {
-  settings: AnnouncementSettings;
+function AnnouncementSection({ announcements, busy, editing, setEditing, onSave, onDelete }: {
+  announcements: AnnouncementSettings[];
   busy: boolean;
+  editing: AnnouncementSettings | null;
+  setEditing: (announcement: AnnouncementSettings | null) => void;
   onSave: (payload: { message: string; enabled: boolean; startsAt: string; endsAt: string | null }) => void;
+  onDelete: (announcement: AnnouncementSettings) => void;
 }) {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -285,27 +308,49 @@ function AnnouncementSection({ settings, busy, onSave }: {
   }
 
   const [dateError, setDateError] = useState("");
-  const activeNow = settings.currentlyActive;
 
   return (
     <section className="superadmin-announcement-panel">
       <div className="superadmin-list-heading">
-        <div><p className="superadmin-welcome-kicker">COMMUNICATION DE LA BOUTIQUE</p><h2>Bandeau d’annonce</h2></div>
-        <span className={`superadmin-announcement-state${activeNow ? " is-active" : ""}`}>{activeNow ? "Visible sur la boutique" : settings.enabled ? "Programmé ou expiré" : "Désactivé"}</span>
+        <div><p className="superadmin-welcome-kicker">COMMUNICATION DE LA BOUTIQUE</p><h2>Annonces <span>{announcements.length}</span></h2></div>
+        <button className="superadmin-primary" type="button" disabled={busy} onClick={() => { setEditing(null); setDateError(""); }}>Nouvelle annonce</button>
       </div>
-      <p className="superadmin-announcement-intro">Une seule annonce est affichée à la fois. Les visiteurs peuvent la fermer; elle réapparaît lors d’une nouvelle session ou après modification de l’annonce.</p>
-      <form className="superadmin-form superadmin-announcement-form" onSubmit={submit}>
+      <p className="superadmin-announcement-intro">Retrouvez, modifiez ou supprimez vos annonces. Les annonces actives défilent ensemble sur la boutique.</p>
+      <div className="superadmin-table-wrap">
+        <table className="superadmin-table superadmin-announcements-table">
+          <thead><tr><th>Annonce</th><th>Statut</th><th>Début</th><th>Fin</th><th>Actions</th></tr></thead>
+          <tbody>
+            {announcements.map((announcement) => {
+              const status = announcement.currentlyActive ? "En ligne" : !announcement.enabled ? "Désactivée" : announcement.isScheduled ? "Programmée" : "Terminée";
+              const statusClass = announcement.currentlyActive ? "is-available" : announcement.enabled && status === "Programmée" ? "" : "is-archived";
+              return <tr key={announcement.id}>
+                <td><span className="superadmin-announcement-message">{announcement.message}</span><small className="superadmin-table-subline">Modifiée le {formatDate(announcement.updatedAt)}</small></td>
+                <td><span className={`superadmin-stock-badge ${statusClass}`}>{status}</span></td>
+                <td>{formatDate(announcement.startsAt)}</td>
+                <td>{announcement.endsAt ? formatDate(announcement.endsAt) : "Sans date de fin"}</td>
+                <td><div className="superadmin-row-actions"><button type="button" disabled={busy} onClick={() => { setEditing(announcement); setDateError(""); }}>Modifier</button><button type="button" disabled={busy} onClick={() => onDelete(announcement)}>Supprimer</button></div></td>
+              </tr>;
+            })}
+            {!announcements.length && <tr><td colSpan={5}><p className="superadmin-empty">Aucune annonce enregistrée. Créez votre première annonce ci-dessous.</p></td></tr>}
+          </tbody>
+        </table>
+      </div>
+      <form key={editing?.id ?? "new-announcement"} className="superadmin-form superadmin-announcement-form" onSubmit={submit}>
+        <h3>{editing ? "Modifier l’annonce" : "Créer une annonce"}</h3>
         <label>Texte de l’annonce
-          <textarea name="message" required maxLength={280} rows={3} defaultValue={settings.message} />
+          <textarea name="message" required maxLength={280} rows={3} defaultValue={editing?.message ?? ""} />
           <span className="superadmin-label-hint">280 caractères maximum.</span>
         </label>
         <div className="superadmin-announcement-dates">
-          <label>Début d’affichage<input name="startsAt" type="datetime-local" required defaultValue={toLocalDateTime(settings.startsAt)} /></label>
-          <label>Fin d’affichage <span>(facultative)</span><input name="endsAt" type="datetime-local" defaultValue={settings.endsAt ? toLocalDateTime(settings.endsAt) : ""} /></label>
+          <label>Début d’affichage<input name="startsAt" type="datetime-local" required defaultValue={toLocalDateTime(editing?.startsAt ?? new Date().toISOString())} /></label>
+          <label>Fin d’affichage <span>(facultative)</span><input name="endsAt" type="datetime-local" defaultValue={editing?.endsAt ? toLocalDateTime(editing.endsAt) : ""} /></label>
         </div>
         {dateError && <p className="superadmin-error" role="alert">{dateError}</p>}
-        <label className="superadmin-checkbox"><input name="enabled" type="checkbox" defaultChecked={settings.enabled} /> Publier le bandeau pendant la période choisie</label>
-        <button className="superadmin-primary" type="submit" disabled={busy}>{busy ? "Enregistrement…" : "Enregistrer l’annonce"}</button>
+        <label className="superadmin-checkbox"><input name="enabled" type="checkbox" defaultChecked={editing?.enabled ?? true} /> Publier pendant la période choisie</label>
+        <div className="superadmin-form-actions">
+          <button className="superadmin-primary" type="submit" disabled={busy}>{busy ? "Enregistrement…" : editing ? "Enregistrer les modifications" : "Publier l’annonce"}</button>
+          {editing && <button className="superadmin-secondary" type="button" disabled={busy} onClick={() => { setEditing(null); setDateError(""); }}>Annuler</button>}
+        </div>
       </form>
     </section>
   );
@@ -415,6 +460,7 @@ function ProductsSection({ products, categories, busy, editing, setEditing, onSu
         {imagePaths.map((image) => <input type="hidden" name="images" value={image} key={image} />)}
         <input type="hidden" name="slug" value={editing?.slug ?? ""} />
         <div className="superadmin-form-grid"><label>Nom<input name="name" required maxLength={140} defaultValue={editing?.name ?? ""} /></label><label>Prix actuel en FCFA<input name="priceCfa" type="number" min="1" max="100000000" required defaultValue={editing?.priceCfa ?? ""} /></label><label>Ancien prix en FCFA<input name="originalPriceCfa" type="number" min="1" max="100000000" defaultValue={editing?.originalPriceCfa ?? ""} /><span className="superadmin-label-hint">À renseigner pour une promotion ; il doit dépasser le prix actuel.</span></label><label>Catégorie<select name="category" required defaultValue={editing?.category ?? categories.find((category) => category.active)?.name ?? ""}>{editing && !categories.some((category) => category.active && category.name === editing.category) && <option value={editing.category} disabled>{editing.category} (masquée)</option>}{categories.filter((category) => category.active).map((category) => <option value={category.name} key={category.slug}>{category.name}</option>)}</select></label>
+          <label>Vendeur<input name="sellerName" required maxLength={140} defaultValue={editing?.sellerName ?? "Espace Shopping Plus"} /></label><label>Numéro Mobile Money du vendeur<input name="sellerMobileMoney" maxLength={40} placeholder="Ex. +237 6XX XXX XXX" defaultValue={editing?.sellerMobileMoney ?? ""} /><span className="superadmin-label-hint">Enregistré pour calculer un versement simulé. Aucun argent n’est envoyé.</span></label>
           <label className="superadmin-form-wide superadmin-image-upload">Images du produit<input name="imageFile" type="file" accept="image/jpeg,image/png,image/webp" multiple required={!imagePaths.length} onChange={(event) => void uploadProductImage(event)} disabled={imageUploading || imagePaths.length >= 10} /><span className="superadmin-label-hint">JPG, PNG ou WebP · 8 Mo par photo · 10 photos maximum. La première image sera la photo principale.</span>{imageUploading && <span className="superadmin-label-hint">Téléversement des images…</span>}{imagePaths.length > 0 && <span className="superadmin-product-gallery-preview">{imagePaths.map((image, index) => <span className="superadmin-upload-preview" key={image}><StoreImage className="superadmin-product-thumb" src={productImage(image, 240)} alt={`Aperçu ${index + 1} du produit`} sizes="84px" /><span>{index === 0 ? "Principale" : `Photo ${index + 1}`}<button className="superadmin-image-remove" type="button" onClick={() => setImagePaths((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Retirer la photo ${index + 1}`}>Retirer</button></span></span>)}</span>}{imageUploadError && <span className="superadmin-upload-error" role="alert">{imageUploadError}</span>}</label>
           <label className="superadmin-form-wide">Description<textarea name="description" rows={3} required maxLength={3000} defaultValue={editing?.description ?? ""} /></label><label>Tailles / formats (facultatif)<input name="sizes" placeholder="Ex. S, M, L" defaultValue={editing?.sizes.join(", ") ?? ""} /></label><ProductColorsField colors={productColors} onChange={setProductColors} /><label>Quantité disponible<input name="stockQuantity" type="number" min="0" max="1000000" required defaultValue={editing?.stockQuantity ?? 0} /></label><label className="superadmin-checkbox"><input name="isAvailable" type="checkbox" defaultChecked={editing?.isAvailable ?? false} /> Marquer comme disponible</label><label className="superadmin-checkbox"><input name="isPromo" type="checkbox" defaultChecked={editing?.isPromo ?? false} /> Mettre ce produit en promotion</label></div>
         <span className="superadmin-label-hint">Un produit disponible doit avoir au moins une unité en stock.</span><div className="superadmin-form-actions"><button className="superadmin-primary" type="submit" disabled={busy || imageUploading || categories.every((category) => !category.active)}>{imageUploading ? "Téléversement des images…" : editing ? "Enregistrer les modifications" : "Ajouter le produit"}</button><button className="superadmin-secondary" type="button" disabled={busy || imageUploading} onClick={closeModal}>Annuler</button></div>
@@ -541,6 +587,17 @@ function OrdersSection({ orders, busy, onChange }: { orders: Order[]; busy: bool
         }))].map((status) => <option value={status} key={status}>{statusLabels[status] ?? status}</option>)}</select></td></tr>)}
       {!orders.length && <tr><td colSpan={6}><p className="superadmin-empty">Aucune commande pour le moment.</p></td></tr>}
     </tbody></table></div><TablePagination page={currentPage} pageCount={pageCount} total={orders.length} onChange={setPage} />
+  </section>;
+}
+
+function PayoutsSection({ payouts }: { payouts: SellerPayout[] }) {
+  const total = payouts.reduce((sum, payout) => sum + payout.amountCfa, 0);
+  return <section className="superadmin-list superadmin-full-list">
+    <div className="superadmin-list-heading"><div><p className="superadmin-welcome-kicker">SIMULATION UNIQUEMENT</p><h2>Versements vendeurs <span>{payouts.length}</span></h2><p>Montant calculé après paiement SasPay confirmé : {formatPrice(total)}. Aucun transfert réel n’est effectué.</p></div></div>
+    <div className="superadmin-table-wrap"><table className="superadmin-table"><thead><tr><th>Commande</th><th>Vendeur</th><th>Destination Mobile Money</th><th>Montant simulé</th><th>Date</th><th>État</th></tr></thead><tbody>
+      {payouts.map((payout) => <tr key={payout.id}><td>#{payout.orderId.slice(0, 8).toUpperCase()}</td><td>{payout.sellerName}</td><td>{payout.destination}</td><td><strong>{formatPrice(payout.amountCfa)}</strong></td><td>{formatDate(payout.createdAt)}</td><td><span className="superadmin-stock-badge is-available">Simulation</span></td></tr>)}
+      {!payouts.length && <tr><td colSpan={6}><p className="superadmin-empty">Aucun versement simulé. Configurez le vendeur et son numéro sur un produit, puis effectuez un paiement de test confirmé.</p></td></tr>}
+    </tbody></table></div>
   </section>;
 }
 

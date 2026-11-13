@@ -199,11 +199,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .superadmin-announcement-state { padding: 7px 10px; background: #f2e9df; color: #70533e; font-size: 10px; font-weight: 700; }
 .superadmin-announcement-state.is-active { background: #e4efe5; color: #315d3b; }
 .superadmin-announcement-intro { max-width: 720px; margin: 0 0 20px; color: var(--admin-muted); font-size: 12px; line-height: 1.65; }
+.superadmin-announcement-preview { max-width: 760px; margin: 0 0 22px; padding: 16px 18px; border: 1px solid var(--admin-border); background: #f8f2eb; }
+.superadmin-announcement-preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #593723; font-size: 12px; }
+.superadmin-announcement-preview-heading span { color: #6e583f; font-size: 10px; font-weight: 700; }
+.superadmin-announcement-preview p { margin: 12px 0 9px; color: #3a2a20; font-size: 14px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
+.superadmin-announcement-preview small { color: var(--admin-muted); font-size: 10px; }
 .superadmin-announcement-form { max-width: 760px; padding: 0; border: 0; box-shadow: none; }
+.superadmin-announcements-table { min-width: 900px; }
+.superadmin-announcements-table td:first-child { min-width: 260px; max-width: 420px; }
+.superadmin-announcement-message { display: -webkit-box; overflow: hidden; color: #3d2c21; font-size: 12px; font-weight: 600; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.superadmin-announcement-form { margin-top: 24px; padding: 22px; border: 1px solid var(--admin-border); border-radius: 10px; background: var(--admin-surface); box-shadow: 0 5px 20px rgba(55,35,25,.035); }
+.superadmin-announcement-form h3 { margin: 0; color: #35271f; font: 500 21px/1.2 var(--serif); }
 .superadmin-announcement-dates { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
 @media (max-width: 520px) {
   .superadmin-announcement-panel { padding: 16px 13px; }
   .superadmin-announcement-panel .superadmin-list-heading { align-items: flex-start; flex-direction: column; }
+  .superadmin-announcement-preview { padding: 14px; }
+  .superadmin-announcement-form { padding: 16px 13px; }
   .superadmin-announcement-dates { grid-template-columns: 1fr; }
 }
 
@@ -606,4 +618,63 @@ body { background: var(--admin-bg); color: var(--admin-text); }
 .superadmin-modal-form .superadmin-form-actions { padding-top:14px; padding-bottom:14px; }
 @media (max-width:760px) {
   .superadmin-image-upload { padding:11px; }
+}
+
+/* Finition visuelle du tableau de bord. */
+:root {
+  --admin-bg: #f4f1ec;
+  --admin-surface: #fffefa;
+  --admin-border: #e7ded4;
+  --admin-muted: #817366;
+}
+body { background: var(--admin-bg); }
+.superadmin-shell { grid-template-columns: 264px minmax(0,1fr); background: var(--admin-bg); }
+.superadmin-sidebar { z-index: 3; padding: 27px 17px 20px; background: linear-gradient(180deg,#332117 0%,#28180f 100%); box-shadow: 8px 0 28px rgba(43,29,20,.08); }
+.superadmin-brand { padding: 4px 9px 30px; }
+.superadmin-brand-logo { border-radius: 10px; }
+.superadmin-sidebar nav { gap: 6px; }
+.superadmin-sidebar nav button { min-height: 46px; border-radius: 7px; }
+.superadmin-sidebar nav button.active { background: rgba(214,151,110,.17); box-shadow: inset 3px 0 #d59b74; }
+.superadmin-sidebar-footer { padding-top: 18px; }
+.superadmin-main { padding: 38px clamp(22px,4vw,64px) 68px; }
+.superadmin-header { align-items: center; margin-bottom: 32px; }
+.superadmin-header .eyebrow { color: #a26445; }
+.superadmin-header h1 { letter-spacing: -.025em; }
+.superadmin-header-description { font-size: 13px; }
+.superadmin-welcome { min-height: 208px; border-radius: 14px; box-shadow: 0 16px 40px rgba(67,40,25,.12); }
+.superadmin-welcome-decoration { right: 12%; bottom: -84px; color: rgba(255,241,226,.07); font-size: 250px; }
+.superadmin-overview-heading { margin-bottom: 18px; }
+.superadmin-stats-grid { gap: 16px; }
+.superadmin-stat, .superadmin-pending { min-height: 150px; padding: 21px; border-color: var(--admin-border); border-radius: 10px; box-shadow: 0 5px 18px rgba(60,43,31,.035); }
+.superadmin-stat:hover, .superadmin-pending:hover { border-color: #c99a7a; box-shadow: 0 13px 30px rgba(60,43,31,.09); transform: translateY(-3px); }
+.superadmin-stat strong { font-size: 40px; }
+.superadmin-pending { border-color: #e8d6c5; background: linear-gradient(110deg,#f3e8dc,#f8f1e9); }
+.superadmin-notice, .superadmin-form, .superadmin-list, .superadmin-order, .superadmin-announcement-panel { border-color: var(--admin-border); border-radius: 10px; box-shadow: 0 5px 20px rgba(55,35,25,.035); }
+.superadmin-order { padding: 21px; }
+.superadmin-table-wrap { border-radius: 9px; }
+.superadmin-table th { background: #f3eee8; }
+.superadmin-table tbody tr:hover { background: #faf3ed; }
+.superadmin-form input:not([type="checkbox"]), .superadmin-form select, .superadmin-form textarea, .superadmin-order select, .superadmin-table-select, .superadmin-product-search, .superadmin-login-form input { border-radius: 6px; }
+.superadmin-form input:focus, .superadmin-form select:focus, .superadmin-form textarea:focus, .superadmin-order select:focus, .superadmin-login-form input:focus { border-color: #a96a4b; outline: 3px solid rgba(169,106,75,.14); }
+.superadmin-primary, .superadmin-secondary, .superadmin-store-link { border-radius: 6px; }
+.superadmin-primary { box-shadow: 0 3px 8px rgba(82,45,28,.13); }
+.superadmin-secondary:hover:not(:disabled) { background: #f6eee7; }
+.superadmin-store-link { background: rgba(255,254,250,.72); }
+.superadmin-product-row { padding-block: 14px; }
+.superadmin-product-thumb { border-radius: 7px; }
+.superadmin-stock-badge, .superadmin-list-heading h2 span { border-radius: 999px; }
+.superadmin-row-actions button, .superadmin-pagination button { border-radius: 5px; }
+.superadmin-modal { border-radius: 14px; }
+.superadmin-modal-heading { border-radius: 14px 14px 0 0; }
+.superadmin-login-card, .superadmin-setup { border-radius: 14px; box-shadow: 0 22px 65px rgba(67,43,28,.12); }
+.superadmin-feedback, .superadmin-error, .superadmin-loading, .superadmin-empty { border-radius: 7px; }
+@media (max-width: 760px) {
+  .superadmin-shell { grid-template-columns: 1fr; }
+  .superadmin-sidebar { box-shadow: 0 6px 20px rgba(43,29,20,.12); }
+  .superadmin-main { padding-top: 25px; }
+  .superadmin-header { align-items: flex-start; }
+  .superadmin-welcome { border-radius: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .superadmin-stat, .superadmin-pending { transition: none; }
 }

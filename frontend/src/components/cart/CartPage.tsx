@@ -6,7 +6,8 @@ import SiteFooter from "../layout/SiteFooter";
 import { productImage, type Product } from "../../data/store";
 import { whatsappUrl } from "../../data/contact";
 import { useCart } from "./cartStore";
-import { useEffect } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { authClient } from "../../lib/auth-client";
 
 function numericPrice(price: string) {
   return Number(price.replace(/\D/g, ""));
@@ -18,6 +19,13 @@ function formatPrice(value: number) {
 
 export default function CartPage({ products }: { products: Product[] }) {
   const { items, itemCount, setQuantity, removeItem, clear } = useCart();
+  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const [phone, setPhone] = useState("");
+  const [city, setCity] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryNotes, setDeliveryNotes] = useState("");
+  const [checkoutError, setCheckoutError] = useState("");
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const cartProducts = items
     .map((line) => ({
       ...line,
@@ -45,6 +53,53 @@ export default function CartPage({ products }: { products: Product[] }) {
     "Merci de confirmer la disponibilité et les frais de livraison.",
   ].join("\n");
   const whatsappOrderUrl = `${whatsappUrl}?text=${encodeURIComponent(orderMessage)}`;
+
+  async function submitOrder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCheckoutError("");
+    setIsCheckingOut(true);
+
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: cartProducts.map(({ slug, quantity }) => ({ slug, quantity })),
+          phone,
+          city,
+          deliveryAddress,
+          deliveryNotes,
+          paymentMethod: "saspay",
+        }),
+      });
+      const result: unknown = await response.json();
+      const payload = typeof result === "object" && result !== null
+        ? result as { error?: unknown; checkoutUrl?: unknown }
+        : {};
+
+      if (!response.ok) {
+        throw new Error(typeof payload.error === "string"
+          ? payload.error
+          : "La commande n’a pas pu être créée. Réessayez.");
+      }
+
+      if (typeof payload.checkoutUrl !== "string") {
+        throw new Error("La session de paiement SasPay n’a pas été reçue. Contactez-nous avant de recommander.");
+      }
+
+      const checkoutUrl = new URL(payload.checkoutUrl);
+      if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "pay.saspay.me") {
+        throw new Error("L’adresse de paiement SasPay reçue n’est pas valide.");
+      }
+
+      window.location.assign(checkoutUrl);
+    } catch (error) {
+      setCheckoutError(error instanceof Error
+        ? error.message
+        : "Le service de paiement est indisponible. Réessayez.");
+      setIsCheckingOut(false);
+    }
+  }
 
   return (
     <main className="inner-page">
@@ -160,9 +215,85 @@ export default function CartPage({ products }: { products: Product[] }) {
                 la commande.
               </p>
               {cartAvailable ? (
-                <a className="cart-contact-button" href={whatsappOrderUrl} target="_blank" rel="noopener noreferrer">
-                  Commander sur WhatsApp <span aria-hidden="true">→</span>
-                </a>
+                <>
+                  <a className="cart-contact-button" href={whatsappOrderUrl} target="_blank" rel="noopener noreferrer">
+                    Commander sur WhatsApp <span aria-hidden="true">→</span>
+                  </a>
+                  <div className="checkout-panel">
+                    <h2>Payer en ligne avec SasPay</h2>
+                    <p>
+                      Le paiement porte sur le sous-total affiché. Les frais de livraison
+                      seront confirmés avec notre équipe.
+                    </p>
+                    {sessionPending ? (
+                      <p role="status">Vérification de votre compte…</p>
+                    ) : !session ? (
+                      <p>
+                        <Link href="/connexion?redirect=%2Fpanier">Connectez-vous</Link> à votre compte client
+                        pour payer et suivre votre commande.
+                      </p>
+                    ) : session.user.role === "admin" || session.user.role === "superadmin" ? (
+                      <p role="alert">Connectez-vous avec un compte client pour passer commande.</p>
+                    ) : (
+                      <form className="checkout-form" onSubmit={submitOrder}>
+                        <label>
+                          Téléphone
+                          <input
+                            type="tel"
+                            name="phone"
+                            autoComplete="tel"
+                            value={phone}
+                            onChange={(event) => setPhone(event.target.value)}
+                            required
+                            minLength={8}
+                            maxLength={20}
+                            pattern="[+0-9 ()-]{8,20}"
+                          />
+                        </label>
+                        <label>
+                          Ville
+                          <input
+                            name="city"
+                            autoComplete="address-level2"
+                            value={city}
+                            onChange={(event) => setCity(event.target.value)}
+                            required
+                            minLength={2}
+                            maxLength={100}
+                          />
+                        </label>
+                        <label>
+                          Adresse de livraison
+                          <textarea
+                            name="deliveryAddress"
+                            autoComplete="street-address"
+                            value={deliveryAddress}
+                            onChange={(event) => setDeliveryAddress(event.target.value)}
+                            required
+                            minLength={8}
+                            maxLength={300}
+                            rows={3}
+                          />
+                        </label>
+                        <label>
+                          Instructions de livraison <span>(facultatif)</span>
+                          <textarea
+                            name="deliveryNotes"
+                            value={deliveryNotes}
+                            onChange={(event) => setDeliveryNotes(event.target.value)}
+                            maxLength={500}
+                            rows={2}
+                          />
+                        </label>
+                        {checkoutError && <p className="checkout-unavailable" role="alert">{checkoutError}</p>}
+                        <button className="cart-contact-button" type="submit" disabled={isCheckingOut}>
+                          {isCheckingOut ? "Préparation du paiement…" : `Payer ${formatPrice(subtotal)} avec SasPay`}
+                          {!isCheckingOut && <span aria-hidden="true">→</span>}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </>
               ) : (
                 <p className="checkout-unavailable">Un article n’est plus disponible dans la quantité choisie. Ajustez votre panier avant de commander.</p>
               )}
