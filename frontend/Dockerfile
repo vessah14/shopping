@@ -19,6 +19,7 @@ RUN npm ci --omit=dev
 COPY --from=build /app/.next ./.next
 COPY --from=build /app/public ./public
 COPY --from=build /app/scripts ./scripts
+COPY --from=build /app/src/lib/auth.ts ./src/lib/auth.ts
 COPY --from=build /app/next.config.ts ./next.config.ts
 COPY --from=build /app/public/uploads /app/default-uploads
 RUN mkdir -p /app/public/uploads/products
