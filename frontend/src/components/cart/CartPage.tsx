@@ -4,9 +4,9 @@ import Link from "next/link";
 import SiteHeader from "../layout/SiteHeader";
 import SiteFooter from "../layout/SiteFooter";
 import { productImage, type Product } from "../../data/store";
+import { whatsappUrl } from "../../data/contact";
 import { useCart } from "./cartStore";
-import { useEffect, useState, type FormEvent } from "react";
-import { authClient } from "../../lib/auth-client";
+import { useEffect } from "react";
 
 function numericPrice(price: string) {
   return Number(price.replace(/\D/g, ""));
@@ -18,10 +18,6 @@ function formatPrice(value: number) {
 
 export default function CartPage({ products }: { products: Product[] }) {
   const { items, itemCount, setQuantity, removeItem, clear } = useCart();
-  const { data: session, isPending: sessionPending } = authClient.useSession();
-  const [checkoutError, setCheckoutError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [completedOrder, setCompletedOrder] = useState("");
   const cartProducts = items
     .map((line) => ({
       ...line,
@@ -40,47 +36,15 @@ export default function CartPage({ products }: { products: Product[] }) {
   );
   const validItemCount = cartProducts.reduce((total, line) => total + line.quantity, 0);
   const cartAvailable = cartProducts.length === items.length && cartProducts.every((line) => line.product!.isAvailable !== false && (line.product!.stockQuantity === undefined || line.product!.stockQuantity >= line.quantity));
-
-  async function submitOrder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const formElement = event.currentTarget;
-    setCheckoutError("");
-    setSubmitting(true);
-    const form = new FormData(formElement);
-    try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.map(({ slug, quantity }) => ({ slug, quantity })),
-          phone: form.get("phone"),
-          city: form.get("city"),
-          deliveryAddress: form.get("deliveryAddress"),
-          deliveryNotes: form.get("deliveryNotes"),
-          paymentMethod: form.get("paymentMethod"),
-        }),
-      });
-      const result: unknown = await response.json();
-      if (!response.ok) {
-        const message = typeof result === "object" && result !== null && "error" in result ? String(result.error) : "La commande n’a pas pu être enregistrée.";
-        throw new Error(message);
-      }
-      if (typeof result !== "object" || result === null || !("id" in result) || typeof result.id !== "string") {
-        throw new Error("La commande a été reçue, mais son numéro n’a pas pu être confirmé.");
-      }
-      clear();
-      setCompletedOrder(result.id);
-      if ("checkoutUrl" in result && typeof result.checkoutUrl === "string") {
-        window.location.assign(result.checkoutUrl);
-        return;
-      }
-      formElement.reset();
-    } catch (reason) {
-      setCheckoutError(reason instanceof Error ? reason.message : "Le service de commande ne répond pas. Réessayez.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
+  const orderMessage = [
+    "Bonjour Espace Shopping Plus, je souhaite commander :",
+    ...cartProducts.map(({ quantity, product }) =>
+      `- ${product!.name} x${quantity} : ${formatPrice(numericPrice(product!.price) * quantity)}`),
+    "",
+    `Sous-total : ${formatPrice(subtotal)}`,
+    "Merci de confirmer la disponibilité et les frais de livraison.",
+  ].join("\n");
+  const whatsappOrderUrl = `${whatsappUrl}?text=${encodeURIComponent(orderMessage)}`;
 
   return (
     <main className="inner-page">
@@ -94,7 +58,6 @@ export default function CartPage({ products }: { products: Product[] }) {
             panier
           </p>
         </div>
-        {completedOrder && <p className="checkout-success" role="status">Commande {completedOrder.slice(0, 8).toUpperCase()} enregistrée. Notre équipe confirmera les détails avec vous.</p>}
         {validItemCount === 0 ? (
           <div className="cart-empty">
             <span className="cart-empty-icon" aria-hidden="true">
@@ -194,29 +157,15 @@ export default function CartPage({ products }: { products: Product[] }) {
               </div>
               <p>
                 Les frais de livraison seront confirmés avec notre équipe avant
-                votre commande.
+                la commande.
               </p>
-              <a className="cart-pay-button" href="#checkout">
-                Commander <span aria-hidden="true">↓</span>
-              </a>
-              <Link className="cart-contact-button" href="/contact">
-                Contacter la boutique <span aria-hidden="true">→</span>
-              </Link>
-              {cartAvailable ? <section className="checkout-panel" id="checkout">
-                <h2>Finaliser la commande</h2>
-                {sessionPending ? <p>Vérification de votre compte…</p>
-                    : !session ? <p>Connectez-vous pour commander. <Link href="/connexion?redirect=%2Fpanier">Se connecter</Link></p>
-                      : session.user.role === "admin" || session.user.role === "superadmin" ? <p>Connectez-vous avec un compte client pour passer commande.</p>
-                        : <form className="checkout-form" onSubmit={submitOrder}>
-                          <label>Téléphone<input name="phone" type="tel" autoComplete="tel" required minLength={8} maxLength={20} placeholder="+237 6XX XXX XXX" /></label>
-                          <label>Ville<input name="city" required minLength={2} maxLength={100} autoComplete="address-level2" /></label>
-                          <label>Adresse de livraison<textarea name="deliveryAddress" required minLength={8} maxLength={300} autoComplete="street-address" rows={3} /></label>
-                          <label>Informations complémentaires <span>(facultatif)</span><textarea name="deliveryNotes" maxLength={500} rows={2} /></label>
-                          <label>Moyen de paiement<select name="paymentMethod" defaultValue="cash_on_delivery"><option value="cash_on_delivery">Paiement à la livraison</option><option value="saspay">Mobile Money ou carte avec SasPay</option><option value="mtn_money">MTN Mobile Money (confirmation manuelle)</option><option value="orange_money">Orange Money (confirmation manuelle)</option></select></label>
-                          {checkoutError && <p className="form-error" role="alert">{checkoutError}</p>}
-                          <button className="cart-contact-button" type="submit" disabled={submitting}>{submitting ? "Enregistrement…" : "Confirmer la commande"} <span aria-hidden="true">→</span></button>
-                        </form>}
-              </section> : <p className="checkout-unavailable">Un article n’est plus disponible dans la quantité choisie. Ajustez votre panier avant de commander.</p>}
+              {cartAvailable ? (
+                <a className="cart-contact-button" href={whatsappOrderUrl} target="_blank" rel="noopener noreferrer">
+                  Commander sur WhatsApp <span aria-hidden="true">→</span>
+                </a>
+              ) : (
+                <p className="checkout-unavailable">Un article n’est plus disponible dans la quantité choisie. Ajustez votre panier avant de commander.</p>
+              )}
             </aside>
           </div>
         )}
