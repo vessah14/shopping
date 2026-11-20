@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { NextRequest, NextResponse } from "next/server";
+import { uploadsDirectory } from "@/lib/uploads";
 
 const maxUploadBytes = 8 * 1024 * 1024;
 const imageTypes = new Map([
@@ -10,46 +10,41 @@ const imageTypes = new Map([
   ["image/webp", { extension: "webp", matches: (bytes: Buffer) => bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP" }],
 ]);
 
-function corsHeaders(origin: string | null) {
-  const frontendOrigin = new URL(process.env.NEXT_PUBLIC_FRONTEND_URL ?? "http://localhost:3000").origin;
-  const adminOrigin = new URL(process.env.SUPERADMIN_URL ?? "http://localhost:3001").origin;
-  if (origin && origin !== frontendOrigin && origin !== adminOrigin) return null;
-  return new Headers({
-    "Access-Control-Allow-Origin": origin ?? frontendOrigin,
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Vary": "Origin",
-  });
-}
-
-export function OPTIONS(request: NextRequest) {
-  const headers = corsHeaders(request.headers.get("origin"));
-  return headers
-    ? new NextResponse(null, { status: 204, headers })
-    : NextResponse.json({ error: "Origine non autorisée." }, { status: 403 });
+// Uploads are only accepted from the admin application's server, which checks the
+// administrator session and then forwards the file with this shared secret.
+function isAuthorized(request: NextRequest) {
+  const expected = process.env.UPLOADS_API_KEY;
+  const supplied = request.headers.get("x-uploads-api-key");
+  if (!expected || expected.length < 32 || !supplied) return false;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(supplied);
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 export async function POST(request: NextRequest) {
-  const headers = corsHeaders(request.headers.get("origin"));
-  if (!headers) return NextResponse.json({ error: "Origine non autorisée." }, { status: 403 });
+  if (!isAuthorized(request)) return NextResponse.json({ error: "Non autorisé." }, { status: 401 });
+
+  const contentLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(contentLength) && contentLength > maxUploadBytes + 64 * 1024) {
+    return NextResponse.json({ error: "L’image doit peser moins de 8 Mo." }, { status: 413 });
+  }
 
   const formData = await request.formData().catch(() => null);
   const file = formData?.get("file");
-  if (!(file instanceof File)) return NextResponse.json({ error: "Choisissez une image à téléverser." }, { status: 400, headers });
+  if (!(file instanceof File)) return NextResponse.json({ error: "Choisissez une image à téléverser." }, { status: 400 });
   if (file.size < 1 || file.size > maxUploadBytes) {
-    return NextResponse.json({ error: "L’image doit peser moins de 8 Mo." }, { status: 413, headers });
+    return NextResponse.json({ error: "L’image doit peser moins de 8 Mo." }, { status: 413 });
   }
 
   const imageType = imageTypes.get(file.type);
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!imageType || !imageType.matches(bytes)) {
-    return NextResponse.json({ error: "Format non accepté. Choisissez une image JPG, PNG ou WebP valide." }, { status: 415, headers });
+    return NextResponse.json({ error: "Format non accepté. Choisissez une image JPG, PNG ou WebP valide." }, { status: 415 });
   }
 
-  const directory = path.join(process.cwd(), "public", "uploads", "products");
   const filename = `${randomUUID()}.${imageType.extension}`;
-  await mkdir(directory, { recursive: true });
-  await writeFile(path.join(directory, filename), bytes, { flag: "wx" });
+  await mkdir(uploadsDirectory, { recursive: true });
+  await writeFile(`${uploadsDirectory}/${filename}`, bytes, { flag: "wx" });
 
-  return NextResponse.json({ path: `/uploads/products/${filename}` }, { status: 201, headers });
+  return NextResponse.json({ path: `/uploads/products/${filename}` }, { status: 201 });
 }

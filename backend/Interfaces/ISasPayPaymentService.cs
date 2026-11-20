@@ -10,6 +10,7 @@ public interface ISasPayPaymentService
         string customerEmail,
         string customerName,
         string customerPhone,
+        string accessToken,
         CancellationToken cancellationToken);
 
     Task<SasPayPaymentVerification> VerifyPaymentAsync(

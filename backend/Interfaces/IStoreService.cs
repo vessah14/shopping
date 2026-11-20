@@ -16,7 +16,7 @@ public interface IStoreService
 
     Task<CreateOrderResult> CreateOrderAsync(
         CreateOrderRequestDto request,
-        string customerId,
+        string? customerId,
         string customerName,
         string customerEmail,
         CancellationToken cancellationToken);
@@ -33,10 +33,17 @@ public interface IStoreService
 
     Task<bool> UpdateSasPayPaymentStatusAsync(
         Guid orderId,
+        string paymentId,
         string status,
         decimal amount,
         string currency,
         CancellationToken cancellationToken);
+
+    Task<OrderStatusDto?> GetOrderStatusAsync(Guid orderId, string accessToken, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<DeliveryZoneDto>> GetDeliveryZonesAsync(CancellationToken cancellationToken);
+
+    Task<int> ExpireStaleSasPayOrdersAsync(TimeSpan maxAge, CancellationToken cancellationToken);
 
     Task RecordSimulatedSellerPayoutsAsync(Guid orderId, CancellationToken cancellationToken);
 }

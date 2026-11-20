@@ -30,6 +30,7 @@ builder.Services.Configure<SasPayOptions>(
     builder.Configuration.GetSection(SasPayOptions.SectionName));
 builder.Services.AddHttpClient<ISasPayPaymentService, SasPayPaymentService>(
     client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHostedService<StalePaymentCleanupService>();
 builder.Services.AddScoped<IStoreService>(services =>
     new StoreService(services.GetService<NpgsqlDataSource>()));
 

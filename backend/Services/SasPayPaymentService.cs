@@ -17,7 +17,10 @@ public sealed class SasPayPaymentService(
 {
     private const string ApiBaseUrl = "https://api.saspay.me/api/v1/";
     private const string CheckoutHost = "pay.saspay.me";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
     private readonly SasPayOptions settings = options.Value;
 
     public bool IsConfigured =>
@@ -33,6 +36,7 @@ public sealed class SasPayPaymentService(
         string customerEmail,
         string customerName,
         string customerPhone,
+        string accessToken,
         CancellationToken cancellationToken)
     {
         EnsureConfigured();
@@ -44,10 +48,10 @@ public sealed class SasPayPaymentService(
             currency = "XAF",
             country = "CM",
             description = $"Commande #{orderId:D}",
-            customer_email = customerEmail,
+            customer_email = string.IsNullOrWhiteSpace(customerEmail) ? null : customerEmail,
             customer_name = customerName,
             customer_phone = customerPhone,
-            return_url = BuildReturnUrl(orderId),
+            return_url = BuildReturnUrl(orderId, accessToken),
             metadata = new { order_id = orderId.ToString("D") },
         }, options: JsonOptions);
 
@@ -137,13 +141,16 @@ public sealed class SasPayPaymentService(
         return CryptographicOperations.FixedTimeEquals(expectedSignature, suppliedSignature);
     }
 
-    private string BuildReturnUrl(Guid orderId)
+    private string BuildReturnUrl(Guid orderId, string accessToken)
     {
         var returnUri = new Uri(new Uri(settings.ReturnBaseUrl.TrimEnd('/') + "/"), "paiement/retour");
         return Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
             returnUri.AbsoluteUri,
-            "orderId",
-            orderId.ToString("D"));
+            new Dictionary<string, string?>
+            {
+                ["orderId"] = orderId.ToString("D"),
+                ["token"] = accessToken,
+            });
     }
 
     private void EnsureConfigured()

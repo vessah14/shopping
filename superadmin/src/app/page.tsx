@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { redirect } from "next/navigation";
 import SuperadminPanel from "@/components/superadmin/SuperadminPanel";
 import { getSuperadminAccess } from "@/lib/superadmin-access";
 import { getSuperadminOverview } from "@/lib/superadmin-data";
@@ -23,6 +24,8 @@ async function SuperadminContent() {
       </main>
     );
   }
+  if (access.kind !== "authorized") redirect("/connexion");
+
   const overview = await getSuperadminOverview();
   const storeUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
   return <SuperadminPanel userName={access.user.name} isSuperadmin={access.isSuperadmin} initialOverview={overview} storeUrl={storeUrl} />;

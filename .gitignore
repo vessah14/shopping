@@ -4,6 +4,7 @@
 **/node_modules/
 **/.next/
 **/.tsupgrader/
+**/*.tsbuildinfo
 **/.env
 **/.env.*
 !**/.env.example

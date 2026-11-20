@@ -8,6 +8,7 @@ import { productImage, type Product } from "../../data/store";
 import { useCart } from "../cart/cartStore";
 import { authClient } from "../../lib/auth-client";
 import StoreAnnouncementBanner from "./StoreAnnouncementBanner";
+import LanguageToggle from "./LanguageToggle";
 
 const links = [
   { label: "Accueil", href: "/#accueil", section: "accueil" },
@@ -170,6 +171,7 @@ export default function SiteHeader() {
           </div>
         </nav>
         <div className="header-actions">
+          <LanguageToggle />
           <button ref={searchToggle} className="icon-button" type="button" aria-label="Rechercher un produit" aria-expanded={searchOpen} aria-controls={searchOpen ? "search-dialog" : undefined} onClick={() => { setSearchProducts([]); setSearchError(""); setSearchLoaded(false); setSearchOpen(true); }}><Icon name="search" /></button>
           <div className="header-account-links">
             {session

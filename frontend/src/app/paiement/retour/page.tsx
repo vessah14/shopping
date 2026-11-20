@@ -9,12 +9,13 @@ export const metadata: Metadata = {
 };
 
 type PaymentReturnPageProps = {
-  searchParams: Promise<{ orderId?: string | string[] }>;
+  searchParams: Promise<{ orderId?: string | string[]; token?: string | string[] }>;
 };
 
 export default async function PaymentReturnPage({ searchParams }: PaymentReturnPageProps) {
-  const { orderId } = await searchParams;
+  const { orderId, token } = await searchParams;
   const id = typeof orderId === "string" ? orderId : "";
+  const accessToken = typeof token === "string" ? token : "";
 
   return (
     <main className="inner-page">
@@ -23,7 +24,7 @@ export default async function PaymentReturnPage({ searchParams }: PaymentReturnP
           <p className="eyebrow">PAIEMENT SASPAY</p>
           <h1>Vérification de votre paiement</h1>
           {id ? (
-            <PaymentStatusPoller orderId={id} />
+            <PaymentStatusPoller orderId={id} accessToken={accessToken} />
           ) : (
             <p role="alert">Le numéro de commande est manquant.</p>
           )}

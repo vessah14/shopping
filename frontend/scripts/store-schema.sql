@@ -62,6 +62,11 @@ ALTER TABLE store_orders
 ALTER TABLE store_orders
   ADD COLUMN IF NOT EXISTS saspay_checkout_url text;
 ALTER TABLE store_orders
+  ADD COLUMN IF NOT EXISTS saspay_payment_id text;
+CREATE INDEX IF NOT EXISTS store_orders_pending_saspay_idx
+  ON store_orders (created_at)
+  WHERE payment_method = 'saspay' AND payment_status = 'pending';
+ALTER TABLE store_orders
   DROP CONSTRAINT IF EXISTS store_orders_payment_method_check;
 ALTER TABLE store_orders
   ADD CONSTRAINT store_orders_payment_method_check
@@ -157,3 +162,33 @@ ON CONFLICT (name) DO UPDATE SET
   is_active = true,
   is_featured = true,
   sort_order = EXCLUDED.sort_order;
+
+-- Delivery zones managed from the admin. The fee of the chosen zone is added to the
+-- amount paid online.
+CREATE TABLE IF NOT EXISTS store_delivery_zones (
+  id bigserial PRIMARY KEY,
+  name text NOT NULL UNIQUE CHECK (char_length(btrim(name)) BETWEEN 2 AND 80),
+  fee_cfa integer NOT NULL CHECK (fee_cfa BETWEEN 0 AND 1000000),
+  delay text NOT NULL DEFAULT '' CHECK (char_length(delay) <= 80),
+  is_active boolean NOT NULL DEFAULT true,
+  sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Guest checkout: orders may exist without a customer account. Guests follow their
+-- order with a secret link whose SHA-256 hash is stored here.
+ALTER TABLE store_orders ALTER COLUMN customer_id DROP NOT NULL;
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS access_token_hash text;
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_zone text;
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS delivery_fee_cfa integer NOT NULL DEFAULT 0;
+ALTER TABLE store_orders ADD COLUMN IF NOT EXISTS total_cfa integer;
+UPDATE store_orders SET total_cfa = subtotal_cfa + delivery_fee_cfa WHERE total_cfa IS NULL;
+ALTER TABLE store_orders ALTER COLUMN total_cfa SET NOT NULL;
+ALTER TABLE store_orders DROP CONSTRAINT IF EXISTS store_orders_total_check;
+ALTER TABLE store_orders
+  ADD CONSTRAINT store_orders_total_check CHECK (total_cfa = subtotal_cfa + delivery_fee_cfa AND delivery_fee_cfa >= 0);
+
+-- Size and colour chosen by the customer for each line.
+ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS size text NOT NULL DEFAULT '';
+ALTER TABLE store_order_items ADD COLUMN IF NOT EXISTS color text NOT NULL DEFAULT '';

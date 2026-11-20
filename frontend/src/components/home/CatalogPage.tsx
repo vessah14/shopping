@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SiteHeader from "../layout/SiteHeader";
 import SiteFooter from "../layout/SiteFooter";
 import type { Product } from "../../data/store";
 import type { StoreCategory } from "../../lib/store-data";
 import ProductCard from "../products/ProductCard";
-import { useCart } from "../cart/cartStore";
+import { productQuantity, useCart } from "../cart/cartStore";
 
 function normalize(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}
+
+function numericPrice(price: string) {
+  return Number(price.replace(/\D/g, ""));
 }
 
 const categoryAliases: Record<string, string[]> = {
@@ -18,70 +21,98 @@ const categoryAliases: Record<string, string[]> = {
   "Accessoires beauté et capillaires": ["Beauté et cheveux"],
 };
 
-function CatalogContent({ initialSearch, initialCategory, products, categories: storeCategories }: { initialSearch: string; initialCategory: string; products: Product[]; categories: StoreCategory[] }) {
-  const [searchQuery, setSearchQuery] = useState(initialSearch);
-  const [selectedCategory, setSelectedCategory] = useState(initialCategory);
-  const { addItem, items } = useCart();
+const sortOptions = {
+  pertinence: "Pertinence",
+  nouveautes: "Nouveautés",
+  "prix-croissant": "Prix croissant",
+  "prix-decroissant": "Prix décroissant",
+} as const;
+type SortOption = keyof typeof sortOptions;
+
+export default function CatalogPage({ products, categories: storeCategories }: { products: Product[]; categories: StoreCategory[] }) {
+  // Every filter lives in the URL so the back button and shared links keep it.
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const searchQuery = searchParams.get("recherche") ?? "";
+  const selectedCategory = searchParams.get("categorie") ?? "";
+  const promoOnly = searchParams.get("promo") === "1";
+  const sortParam = searchParams.get("tri") ?? "pertinence";
+  const sort: SortOption = sortParam in sortOptions ? sortParam as SortOption : "pertinence";
+  const { addItem, items } = useCart();
   const categories = storeCategories.filter((category) => category.active).map((category) => category.name);
+  const hasPromos = products.some((product) => product.originalPrice || product.isPromo);
+
+  function updateParams(changes: Record<string, string | null>, replace = false) {
+    const next = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    const query = next.toString();
+    const href = query ? `/boutique?${query}` : "/boutique";
+    if (replace) router.replace(href, { scroll: false });
+    else router.push(href, { scroll: false });
+  }
 
   const visibleProducts = products.filter((product) => {
     const matchesCategory = !selectedCategory || product.category === selectedCategory || categoryAliases[selectedCategory]?.includes(product.category);
+    const matchesPromo = !promoOnly || Boolean(product.originalPrice || product.isPromo);
     const searchableText = normalize(`${product.name} ${product.category} ${product.description}`);
-    return matchesCategory && (!searchQuery || searchableText.includes(normalize(searchQuery)));
+    return matchesCategory && matchesPromo && (!searchQuery || searchableText.includes(normalize(searchQuery)));
   });
+  if (sort === "prix-croissant") visibleProducts.sort((a, b) => numericPrice(a.price) - numericPrice(b.price));
+  if (sort === "prix-decroissant") visibleProducts.sort((a, b) => numericPrice(b.price) - numericPrice(a.price));
+  if (sort === "nouveautes") visibleProducts.reverse();
 
-  function clearFilters() {
-    setSearchQuery("");
-    setSelectedCategory("");
-    router.replace("/boutique", { scroll: false });
-  }
+  const hasFilters = Boolean(searchQuery.trim() || selectedCategory || promoOnly);
 
   return (
     <main className="inner-page">
       <SiteHeader />
-      <section className="catalog-hero" aria-label="La boutique Espace Shopping Plus">
-        <div className="catalog-hero-copy">
-          <p className="eyebrow">VOTRE BOUTIQUE AU CAMEROUN</p>
-          <h1>Mode, beauté<br /><em>et cheveux.</em></h1>
-          <p>Parcourez notre sélection, choisissez vos articles et contactez-nous pour confirmer leur disponibilité.</p>
-          <a className="catalog-hero-button" href="#catalog-produits">Voir les articles <span aria-hidden="true">↓</span></a>
-        </div>
-        <div className="catalog-hero-image" role="img" aria-label="Portrait de mode au Cameroun" />
-      </section>
-      <section className="catalog-section" id="boutique">
+      <section className="catalog-section catalog-section-compact" id="boutique">
         <div className="catalog-heading" id="catalog-produits">
-          <p className="eyebrow">LA SÉLECTION ESPACE SHOPPING PLUS</p>
-          <h2>Des articles pour vos envies.</h2>
-          <p>Mode, beauté et cheveux : découvrez les articles disponibles.</p>
+          <p className="eyebrow">LA BOUTIQUE</p>
+          <h1>{selectedCategory || "Mode, beauté et cheveux"}</h1>
         </div>
         <div className="catalog-toolbar">
-          <div className="catalog-filters" aria-label="Filtrer par catégorie">
-            <button className={!selectedCategory ? "catalog-filter active" : "catalog-filter"} type="button" aria-pressed={!selectedCategory} onClick={() => setSelectedCategory("")}>Tout voir</button>
-            {categories.map((category) => <button className={selectedCategory === category ? "catalog-filter active" : "catalog-filter"} type="button" aria-pressed={selectedCategory === category} onClick={() => setSelectedCategory(category)} key={category}>{category}</button>)}
-          </div>
-          <p className="catalog-result-count">{visibleProducts.length} {visibleProducts.length === 1 ? "article" : "articles"}</p>
+          <form className="catalog-search" role="search" onSubmit={(event) => event.preventDefault()}>
+            <label className="sr-only" htmlFor="catalog-search-input">Rechercher un article</label>
+            <input
+              id="catalog-search-input"
+              type="search"
+              placeholder="Rechercher un article…"
+              value={searchQuery}
+              onChange={(event) => updateParams({ recherche: event.target.value || null }, true)}
+            />
+          </form>
+          <label className="catalog-sort">
+            <span>Trier par</span>
+            <select value={sort} onChange={(event) => updateParams({ tri: event.target.value === "pertinence" ? null : event.target.value })}>
+              {Object.entries(sortOptions).map(([value, label]) => <option value={value} key={value}>{label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="catalog-filters" role="group" aria-label="Filtrer par catégorie">
+          <button className={!selectedCategory ? "catalog-filter active" : "catalog-filter"} type="button" aria-pressed={!selectedCategory} onClick={() => updateParams({ categorie: null })}>Tout voir</button>
+          {hasPromos && <button className={promoOnly ? "catalog-filter catalog-filter-promo active" : "catalog-filter catalog-filter-promo"} type="button" aria-pressed={promoOnly} onClick={() => updateParams({ promo: promoOnly ? null : "1" })}>Promos</button>}
+          {categories.map((category) => <button className={selectedCategory === category ? "catalog-filter active" : "catalog-filter"} type="button" aria-pressed={selectedCategory === category} onClick={() => updateParams({ categorie: category })} key={category}>{category}</button>)}
+        </div>
+        <div className="catalog-result-row">
+          <p className="catalog-result-count" role="status">{visibleProducts.length} {visibleProducts.length === 1 ? "article" : "articles"}</p>
+          {hasFilters && visibleProducts.length > 0 && <button type="button" className="catalog-clear" onClick={() => router.replace("/boutique", { scroll: false })}>Effacer les filtres <span aria-hidden="true">×</span></button>}
         </div>
         {visibleProducts.length ? <div className="product-grid">
-          {visibleProducts.map((product) => <ProductCard product={product} cartQuantity={items.find((item) => item.slug === product.slug)?.quantity ?? 0} onAddToCart={addItem} key={product.slug} />)}
+          {visibleProducts.map((product) => <ProductCard product={product} cartQuantity={productQuantity(items, product.slug)} onAddToCart={addItem} key={product.slug} />)}
         </div> : <div className="catalog-empty">
           <span aria-hidden="true">⌕</span>
           <h2>{products.length ? "Aucun article trouvé" : "Aucun article disponible pour le moment"}</h2>
           <p>{products.length ? "Essayez un autre mot-clé ou choisissez une autre catégorie." : "Notre sélection sera bientôt disponible. Contactez-nous si vous recherchez un article en particulier."}</p>
           {products.length
-            ? <button type="button" className="catalog-reset" onClick={clearFilters}>Effacer les filtres</button>
+            ? <button type="button" className="catalog-reset" onClick={() => router.replace("/boutique", { scroll: false })}>Effacer les filtres</button>
             : <a className="catalog-reset" href="/contact">Contacter la boutique</a>}
         </div>}
-        {(searchQuery || selectedCategory) && visibleProducts.length > 0 && <button type="button" className="catalog-clear" onClick={clearFilters}>Effacer les filtres <span aria-hidden="true">×</span></button>}
       </section>
       <SiteFooter />
     </main>
   );
-}
-
-export default function CatalogPage({ products, categories }: { products: Product[]; categories: StoreCategory[] }) {
-  const searchParams = useSearchParams();
-  const initialSearch = searchParams.get("recherche") ?? "";
-  const initialCategory = searchParams.get("categorie") ?? "";
-  return <CatalogContent key={`${initialSearch}:${initialCategory}`} initialSearch={initialSearch} initialCategory={initialCategory} products={products} categories={categories} />;
 }

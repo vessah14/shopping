@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import ProductDetail from "../../../components/products/ProductDetail";
-import { getStoreProduct } from "../../../lib/store-data";
+import { getStoreData, getStoreProduct } from "../../../lib/store-data";
 import { absoluteSiteUrl, serializeJsonLd } from "../../../lib/seo";
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
@@ -37,6 +37,10 @@ async function ProductPageContent({ params }: { params: Promise<{ slug: string }
   await connection();
   const product = await getStoreProduct(slug);
   if (!product) notFound();
+  const { products } = await getStoreData();
+  const relatedProducts = products
+    .filter((candidate) => candidate.slug !== product.slug && candidate.category === product.category)
+    .slice(0, 4);
 
   const images = (product.images?.length ? product.images : [product.image])
     .map((image) => absoluteSiteUrl(image));
@@ -64,7 +68,7 @@ async function ProductPageContent({ params }: { params: Promise<{ slug: string }
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: serializeJsonLd(productStructuredData) }} />
-      <ProductDetail product={product} />
+      <ProductDetail product={product} relatedProducts={relatedProducts} />
     </>
   );
 }

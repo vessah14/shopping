@@ -50,8 +50,15 @@ function slugify(value: string) {
 
 async function guard() {
   const access = await getSuperadminAccess();
+  const noStore = { "Cache-Control": "no-store" };
   if (access.kind === "unconfigured") {
-    return { response: NextResponse.json({ error: "Configure DATABASE_URL, BETTER_AUTH_SECRET et SUPERADMIN_EMAIL." }, { status: 503 }) };
+    return { response: NextResponse.json({ error: "Configure DATABASE_URL, BETTER_AUTH_SECRET et SUPERADMIN_EMAIL." }, { status: 503, headers: noStore }) };
+  }
+  if (access.kind === "unauthenticated") {
+    return { response: NextResponse.json({ error: "Connectez-vous avec un compte administrateur." }, { status: 401, headers: noStore }) };
+  }
+  if (access.kind === "forbidden") {
+    return { response: NextResponse.json({ error: "Ce compte n’a pas le rôle administrateur." }, { status: 403, headers: noStore }) };
   }
   return { access };
 }

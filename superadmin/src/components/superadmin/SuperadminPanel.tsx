@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { productImage } from "@/lib/store-images";
 import StoreImage from "@/components/ui/StoreImage";
+import { authClient } from "@/lib/auth-client";
 
 type Section = "overview" | "products" | "categories" | "orders" | "payouts" | "customers" | "announcements";
 type AnnouncementSettings = {
@@ -86,6 +88,8 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -109,6 +113,7 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
     setData(null);
     try {
       const response = await fetch(`/api/superadmin?section=${target}`, { cache: "no-store" });
+      if (response.status === 401) { router.replace("/connexion"); return false; }
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "error" in result ? String(result.error) : "Impossible de charger cette section.");
       if (target === "announcements"
@@ -155,6 +160,7 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,
       });
+      if (response.status === 401) { router.replace("/connexion"); return false; }
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error(typeof result === "object" && result !== null && "error" in result ? String(result.error) : "L’opération a échoué.");
       setFeedback(successMessage);
@@ -212,6 +218,10 @@ export default function SuperadminPanel({ userName, isSuperadmin, initialOvervie
         <div className="superadmin-sidebar-footer">
           <span className="superadmin-user"><span className="superadmin-avatar" aria-hidden="true">{userName.trim().slice(0, 1).toUpperCase()}</span><span>{userName}<small>{isSuperadmin ? "Superadministrateur" : "Administrateur"}</small></span></span>
           <Link href={storeUrl}>Voir la boutique ↗</Link>
+          <button type="button" className="superadmin-signout" disabled={signingOut} onClick={async () => {
+            setSigningOut(true);
+            try { await authClient.signOut(); } finally { router.replace("/connexion"); }
+          }}>{signingOut ? "Déconnexion…" : "Se déconnecter"}</button>
         </div>
       </aside>
 

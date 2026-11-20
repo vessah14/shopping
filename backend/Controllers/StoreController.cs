@@ -111,13 +111,19 @@ public sealed partial class StoreController(
             return Unauthorized(new { error = "Unauthorized." });
         }
 
-        var customerId = Request.Headers["X-Customer-Id"].ToString();
+        var customerIdHeader = Request.Headers["X-Customer-Id"].ToString().Trim();
+        string? customerId = customerIdHeader.Length > 0 ? customerIdHeader : null;
         var customerName = request.CustomerName?.Trim() ?? string.Empty;
         var customerEmail = request.CustomerEmail?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(customerId) || customerName.Length is < 1 or > 100 ||
-            customerEmail.Length is < 3 or > 254 || !customerEmail.Contains('@'))
+        if (customerName.Length is < 2 or > 100)
         {
-            return BadRequest(new { error = "Customer identity is invalid." });
+            return BadRequest(new { error = "Indiquez votre nom (2 à 100 caractères)." });
+        }
+
+        if (customerEmail.Length > 0 &&
+            (customerEmail.Length > 254 || !EmailRegex().IsMatch(customerEmail)))
+        {
+            return BadRequest(new { error = "L’adresse e-mail est invalide." });
         }
 
         if (!IsValidOrderRequest(request, out var validationError))
@@ -151,7 +157,7 @@ public sealed partial class StoreController(
 
             if (request.PaymentMethod == "saspay")
             {
-                if (result.SubtotalCfa < 1)
+                if (result.TotalCfa < 1)
                 {
                     await storeService.FailSasPayOrderAndRestoreStockAsync(result.Id.Value, cancellationToken);
                     return BadRequest(new { error = "Le montant de la commande est invalide pour un paiement SasPay." });
@@ -161,10 +167,11 @@ public sealed partial class StoreController(
                 {
                     var checkout = await sasPayPaymentService.CreateCheckoutSessionAsync(
                         result.Id.Value,
-                        result.SubtotalCfa,
+                        result.TotalCfa,
                         customerEmail,
                         customerName,
                         request.Phone!.Trim(),
+                        result.AccessToken,
                         cancellationToken);
                     if (!await storeService.SaveSasPayCheckoutSessionAsync(
                         result.Id.Value,
@@ -181,7 +188,7 @@ public sealed partial class StoreController(
 
                     return StatusCode(
                         StatusCodes.Status201Created,
-                        new CreateOrderResponseDto(result.Id.Value, checkout.CheckoutUrl));
+                        new CreateOrderResponseDto(result.Id.Value, result.AccessToken, checkout.CheckoutUrl));
                 }
                 catch (Exception error) when (error is SasPayException or HttpRequestException or TaskCanceledException)
                 {
@@ -195,11 +202,59 @@ public sealed partial class StoreController(
 
             return StatusCode(
                 StatusCodes.Status201Created,
-                new CreateOrderResponseDto(result.Id.Value));
+                new CreateOrderResponseDto(result.Id.Value, result.AccessToken));
         }
         catch (NpgsqlException error)
         {
             logger.LogError(error, "Unable to create an order for customer {CustomerId}.", customerId);
+            return ServiceUnavailable("Le service de commande est indisponible.");
+        }
+    }
+
+    [HttpGet("delivery-zones")]
+    [ProducesResponseType<DeliveryZoneDto[]>(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetDeliveryZones(CancellationToken cancellationToken)
+    {
+        if (!storeService.IsConfigured)
+        {
+            return ServiceUnavailable("Le service de commande est indisponible.");
+        }
+
+        try
+        {
+            return Ok(await storeService.GetDeliveryZonesAsync(cancellationToken));
+        }
+        catch (NpgsqlException error)
+        {
+            logger.LogError(error, "Unable to load delivery zones.");
+            return ServiceUnavailable("Le service de commande est indisponible.");
+        }
+    }
+
+    [HttpGet("orders/{orderId:guid}/status")]
+    [ProducesResponseType<OrderStatusDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetOrderStatus(Guid orderId, CancellationToken cancellationToken)
+    {
+        if (!IsAuthorized())
+        {
+            return Unauthorized(new { error = "Unauthorized." });
+        }
+
+        var token = Request.Headers["X-Order-Token"].ToString();
+        if (string.IsNullOrWhiteSpace(token) || !storeService.IsConfigured)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var status = await storeService.GetOrderStatusAsync(orderId, token, cancellationToken);
+            return status is null ? NotFound() : Ok(status);
+        }
+        catch (NpgsqlException error)
+        {
+            logger.LogError(error, "Unable to load status of order {OrderId}.", orderId);
             return ServiceUnavailable("Le service de commande est indisponible.");
         }
     }
@@ -216,9 +271,17 @@ public sealed partial class StoreController(
             request.Items.Any(item =>
                 item?.Slug is not { } slug ||
                 !ProductSlugRegex().IsMatch(slug) ||
+                (item.Size?.Length ?? 0) > 40 ||
+                (item.Color?.Length ?? 0) > 40 ||
                 item.Quantity is < 1 or > 50))
         {
             error = "Votre panier est vide ou contient des quantités invalides.";
+            return false;
+        }
+
+        if (request.DeliveryZoneId is not > 0)
+        {
+            error = "Choisissez une zone de livraison.";
             return false;
         }
 
@@ -228,7 +291,7 @@ public sealed partial class StoreController(
         var deliveryNotes = request.DeliveryNotes?.Trim() ?? string.Empty;
         if (!PhoneRegex().IsMatch(phone) || city.Length is < 2 or > 100 ||
             deliveryAddress.Length is < 8 or > 300 || deliveryNotes.Length > 500 ||
-        request.PaymentMethod is not ("cash_on_delivery" or "mtn_money" or "orange_money" or "saspay"))
+        request.PaymentMethod is not "saspay")
         {
             error = "Vérifiez votre téléphone, ville, adresse et moyen de paiement.";
             return false;
@@ -240,6 +303,9 @@ public sealed partial class StoreController(
 
     [GeneratedRegex("^[a-z0-9]+(?:-[a-z0-9]+)*$")]
     private static partial Regex ProductSlugRegex();
+
+    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    private static partial Regex EmailRegex();
 
     [GeneratedRegex(@"^\+?[0-9\s()-]{8,20}$")]
     private static partial Regex PhoneRegex();

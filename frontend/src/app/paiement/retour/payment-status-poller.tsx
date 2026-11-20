@@ -7,7 +7,7 @@ type Order = {
   paymentStatus: string;
 };
 
-function isOrder(value: unknown): value is Order {
+function isOrderStatus(value: unknown): value is Order {
   return typeof value === "object" &&
     value !== null &&
     "id" in value &&
@@ -16,35 +16,41 @@ function isOrder(value: unknown): value is Order {
     typeof value.paymentStatus === "string";
 }
 
-export default function PaymentStatusPoller({ orderId }: { orderId: string }) {
+export default function PaymentStatusPoller({ orderId, accessToken }: { orderId: string; accessToken: string }) {
   const [message, setMessage] = useState("Nous attendons la confirmation sécurisée de SasPay…");
 
   useEffect(() => {
+    if (!accessToken) return;
+
     let active = true;
     let timeout: ReturnType<typeof setTimeout>;
     let attempts = 0;
 
     async function checkStatus() {
       try {
-        const response = await fetch("/api/orders", { cache: "no-store" });
+        const response = await fetch(
+          `/api/orders/${encodeURIComponent(orderId)}/status?token=${encodeURIComponent(accessToken)}`,
+          { cache: "no-store" },
+        );
         if (!response.ok) {
-          throw new Error("Connectez-vous pour consulter le statut de votre commande.");
+          const result: unknown = await response.json().catch(() => null);
+          const error = typeof result === "object" && result !== null && "error" in result && typeof result.error === "string"
+            ? result.error
+            : "Le statut du paiement est indisponible.";
+          throw new Error(response.status === 404 ? "Ce lien de suivi est invalide ou expiré." : error);
         }
 
         const result: unknown = await response.json();
-        const order = Array.isArray(result)
-          ? result.find((item): item is Order => isOrder(item) && item.id === orderId)
-          : undefined;
-        if (!order) {
-          throw new Error("Cette commande est introuvable dans votre compte.");
+        if (!isOrderStatus(result) || result.id !== orderId) {
+          throw new Error("La réponse de suivi de commande est invalide.");
         }
 
         if (!active) return;
-        if (order.paymentStatus === "confirmed") {
+        if (result.paymentStatus === "confirmed") {
           setMessage("Paiement confirmé. Merci pour votre commande !");
           return;
         }
-        if (order.paymentStatus === "failed") {
+        if (result.paymentStatus === "failed") {
           setMessage("Le paiement n’a pas abouti. Votre commande est enregistrée comme non payée.");
           return;
         }
@@ -53,7 +59,7 @@ export default function PaymentStatusPoller({ orderId }: { orderId: string }) {
         setMessage(
           attempts < 40
             ? "Nous attendons la confirmation sécurisée de SasPay…"
-            : "La confirmation prend plus de temps que prévu. Consultez vos commandes dans votre compte.",
+            : "La confirmation prend plus de temps que prévu. Revenez sur cette page dans quelques instants.",
         );
         if (attempts < 40) {
           timeout = setTimeout(checkStatus, 3000);
@@ -70,7 +76,7 @@ export default function PaymentStatusPoller({ orderId }: { orderId: string }) {
       active = false;
       clearTimeout(timeout);
     };
-  }, [orderId]);
+  }, [orderId, accessToken]);
 
-  return <p role="status" aria-live="polite">{message}</p>;
+  return <p role="status" aria-live="polite">{accessToken ? message : "Le lien de suivi est incomplet. Contactez-nous si votre paiement a été débité."}</p>;
 }

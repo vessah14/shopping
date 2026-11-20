@@ -17,6 +17,13 @@ describe("store comments", () => {
     expect(parseNewStoreComment({ name: "Awa", message: "B".repeat(1001) })).toBeNull();
   });
 
+  it("rejects comments containing links", () => {
+    expect(parseNewStoreComment({ name: "Awa", message: "Promo sur https://spam.example" })).toBeNull();
+    expect(parseNewStoreComment({ name: "Awa", message: "Allez sur www.spam.fr" })).toBeNull();
+    expect(parseNewStoreComment({ name: "cheap-pills.com", message: "Bonjour" })).toBeNull();
+    expect(parseNewStoreComment({ name: "Awa", message: "Livraison rapide. Merci !" })).not.toBeNull();
+  });
+
   it("checks data returned by the comments API", () => {
     expect(isStoreComment({
       id: "1",

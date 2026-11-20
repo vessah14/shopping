@@ -30,6 +30,7 @@ Dans les valeurs ci-dessous, remplacez `Postgres` par le nom exact du service Po
 | `NEXT_PUBLIC_FRONTEND_URL` | `https://<domaine-frontend>` |
 | `STORE_API_URL` | `http://${{backend.RAILWAY_PRIVATE_DOMAIN}}:${{backend.PORT}}` |
 | `STORE_API_KEY` | Même valeur que `StoreApi__Key` du backend |
+| `UPLOADS_API_KEY` | Secret aléatoire d’au moins 32 caractères, identique dans `superadmin` |
 
 `superadmin` :
 
@@ -41,6 +42,7 @@ Dans les valeurs ci-dessous, remplacez `Postgres` par le nom exact du service Po
 | `SUPERADMIN_URL` | `https://<domaine-superadmin>` |
 | `SUPERADMIN_EMAIL` | La même adresse que dans `frontend` |
 | `FRONTEND_URL` | `https://<domaine-frontend>` |
+| `UPLOADS_API_KEY` | La même valeur que dans `frontend` |
 | `NEXT_PUBLIC_FRONTEND_URL` | `https://<domaine-frontend>` |
 
 `backend` :
@@ -52,9 +54,10 @@ Dans les valeurs ci-dessous, remplacez `Postgres` par le nom exact du service Po
 | `ForwardedHeaders__Enabled` | `true` |
 | `SasPay__ApiKey` | Clé SasPay, si les paiements sont activés |
 | `SasPay__WebhookSecret` | Secret du webhook SasPay, si les paiements sont activés |
-| `SasPay__ReturnBaseUrl` | `https://<domaine-frontend>/paiement/retour` |
+| `SasPay__ReturnBaseUrl` | `https://<domaine-frontend>` (le chemin `/paiement/retour` est ajouté automatiquement) |
+| `SasPay__PendingOrderTimeoutMinutes` | Optionnel, `120` par défaut : délai avant de libérer le stock d’une commande non payée |
 
-Définissez `BETTER_AUTH_SECRET` et `StoreApi__Key` comme secrets Railway, pas dans Git. Les variables `NEXT_PUBLIC_FRONTEND_URL` doivent être présentes avant le build; si les domaines Railway ne sont connus qu’après le premier déploiement, mettez-les à jour puis redéployez les deux services Next.js.
+Définissez `BETTER_AUTH_SECRET`, `StoreApi__Key`, `UPLOADS_API_KEY` et les clés SasPay comme secrets Railway, pas dans Git. Les variables `NEXT_PUBLIC_FRONTEND_URL` doivent être présentes avant le build; si les domaines Railway ne sont connus qu’après le premier déploiement, mettez-les à jour puis redéployez les deux services Next.js.
 
 Quand `ForwardedHeaders__Enabled=true`, le backend ne redirige pas lui-même vers HTTPS : Railway termine TLS à l’entrée et les appels frontend-vers-backend utilisent HTTP sur le réseau privé Railway.
 

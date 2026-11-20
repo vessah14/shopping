@@ -36,6 +36,7 @@ public sealed class CreateOrderRequestDto
     public string? City { get; init; }
     public string? DeliveryAddress { get; init; }
     public string? DeliveryNotes { get; init; }
+    public long? DeliveryZoneId { get; init; }
     public string? PaymentMethod { get; init; }
     public string? CustomerName { get; init; }
     public string? CustomerEmail { get; init; }
@@ -45,11 +46,18 @@ public sealed class CheckoutLineDto
 {
     public string? Slug { get; init; }
     public int Quantity { get; init; }
+    public string? Size { get; init; }
+    public string? Color { get; init; }
 }
 
-public sealed record CreateOrderResponseDto(Guid Id, string? CheckoutUrl = null);
+public sealed record CreateOrderResponseDto(Guid Id, string AccessToken, string? CheckoutUrl = null);
 
-public sealed record CreateOrderResult(int StatusCode, Guid? Id, string? Error, int SubtotalCfa = 0);
+public sealed record CreateOrderResult(
+    int StatusCode,
+    Guid? Id,
+    string? Error,
+    int TotalCfa = 0,
+    string AccessToken = "");
 
 public sealed record CustomerOrderDto(
     Guid Id,
@@ -57,7 +65,14 @@ public sealed record CustomerOrderDto(
     string PaymentMethod,
     string PaymentStatus,
     int SubtotalCfa,
+    int DeliveryFeeCfa,
+    int TotalCfa,
+    string? DeliveryZone,
     DateTime CreatedAt,
     IReadOnlyList<CustomerOrderItemDto> Items);
 
-public sealed record CustomerOrderItemDto(string Name, int Quantity, int LineTotalCfa);
+public sealed record CustomerOrderItemDto(string Name, int Quantity, int LineTotalCfa, string Size = "", string Color = "");
+
+public sealed record OrderStatusDto(Guid Id, string Status, string PaymentStatus, int TotalCfa);
+
+public sealed record DeliveryZoneDto(long Id, string Name, int FeeCfa, string Delay);

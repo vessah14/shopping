@@ -33,7 +33,7 @@ export default function SiteFooter() {
       </div>
       <div className="footer-bottom">
         <nav className="footer-legal" aria-label="Liens utiles">
-          <Link href="/boutique">Boutique</Link><Link href="/#collections">Nos catégories</Link><Link href="/contact">Contact</Link>
+          <Link href="/boutique">Boutique</Link><Link href="/#collections">Nos catégories</Link><Link href="/livraison-retours">Livraison et retours</Link><Link href="/contact">Contact</Link>
         </nav>
         <span>© 2026 Espace Shopping Plus</span>
       </div>

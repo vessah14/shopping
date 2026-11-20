@@ -14,6 +14,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+export function containsLink(value: string) {
+  return /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|ru|xyz|top|info|io|me|ly)\b)/i.test(value);
+}
+
 export function parseNewStoreComment(value: unknown): NewStoreComment | null {
   if (!isRecord(value) || typeof value.name !== "string" || typeof value.message !== "string") {
     return null;
@@ -22,6 +26,10 @@ export function parseNewStoreComment(value: unknown): NewStoreComment | null {
   const name = value.name.trim();
   const message = value.message.trim();
   if (name.length < 2 || name.length > 80 || message.length < 2 || message.length > 1000) {
+    return null;
+  }
+  // Customer reviews never need links; rejecting them removes most spam.
+  if (containsLink(name) || containsLink(message)) {
     return null;
   }
 

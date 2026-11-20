@@ -53,9 +53,10 @@ public sealed class StoreService(
     {
         const string sql = """
             SELECT o.id, o.status, o.payment_method, o.payment_status,
-                   o.subtotal_cfa, o.created_at,
+                   o.subtotal_cfa, o.delivery_fee_cfa, o.total_cfa, o.delivery_zone, o.created_at,
                    COALESCE(json_agg(json_build_object(
-                       'name', i.product_name, 'quantity', i.quantity, 'lineTotalCfa', i.line_total_cfa
+                       'name', i.product_name, 'quantity', i.quantity, 'lineTotalCfa', i.line_total_cfa,
+                       'size', i.size, 'color', i.color
                    )) FILTER (WHERE i.id IS NOT NULL), '[]'::json)::text AS items
             FROM store_orders o
             LEFT JOIN store_order_items i ON i.order_id = o.id
@@ -74,7 +75,7 @@ public sealed class StoreService(
         while (await reader.ReadAsync(cancellationToken))
         {
             var items = JsonSerializer.Deserialize<List<CustomerOrderItemDto>>(
-                reader.GetString(6),
+                reader.GetString(9),
                 DatabaseJsonOptions) ?? [];
             orders.Add(new CustomerOrderDto(
                 reader.GetGuid(0),
@@ -82,7 +83,10 @@ public sealed class StoreService(
                 reader.GetString(2),
                 reader.GetString(3),
                 reader.GetInt32(4),
-                reader.GetDateTime(5),
+                reader.GetInt32(5),
+                reader.GetInt32(6),
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                reader.GetDateTime(8),
                 items));
         }
 
@@ -178,55 +182,178 @@ public sealed class StoreService(
 
     public async Task<bool> UpdateSasPayPaymentStatusAsync(
         Guid orderId,
+        string paymentId,
         string status,
         decimal amount,
         string currency,
         CancellationToken cancellationToken)
     {
         if (status is not ("confirmed" or "failed") ||
+            string.IsNullOrWhiteSpace(paymentId) ||
             amount != decimal.Truncate(amount) ||
-            amount is < 0 or > int.MaxValue ||
+            amount is < 1 or > int.MaxValue ||
             !string.Equals(currency, "XAF", StringComparison.Ordinal))
         {
             return false;
         }
 
-        const string sql = """
-            UPDATE store_orders
-            SET payment_status = @status, updated_at = now()
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        const string readSql = """
+            SELECT payment_status, total_cfa, saspay_payment_id
+            FROM store_orders
             WHERE id = @orderId
               AND payment_method = 'saspay'
               AND saspay_checkout_session_id IS NOT NULL
-              AND subtotal_cfa = @amount
-              AND (
-                  payment_status = 'pending'
-                  OR payment_status = @status
-                  OR (@status = 'confirmed' AND payment_status = 'failed')
-              )
+            FOR UPDATE
             """;
+        await using var readOrder = new NpgsqlCommand(readSql, connection, transaction);
+        readOrder.Parameters.AddWithValue("orderId", orderId);
+        string currentStatus;
+        string? confirmedPaymentId;
+        await using (var reader = await readOrder.ExecuteReaderAsync(cancellationToken))
+        {
+            if (!await reader.ReadAsync(cancellationToken) || reader.GetInt32(1) != decimal.ToInt32(amount))
+            {
+                await reader.DisposeAsync();
+                await transaction.RollbackAsync(cancellationToken);
+                return false;
+            }
 
+            currentStatus = reader.GetString(0);
+            confirmedPaymentId = reader.IsDBNull(2) ? null : reader.GetString(2);
+        }
+
+        // Idempotent replays, and a late "failed" event never downgrades a paid order.
+        if (currentStatus == status || currentStatus == "confirmed")
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return currentStatus == status &&
+                (status != "confirmed" || confirmedPaymentId is null || confirmedPaymentId == paymentId);
+        }
+
+        if (currentStatus is not ("pending" or "failed"))
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        const string updateSql = """
+            UPDATE store_orders
+            SET payment_status = @status,
+                saspay_payment_id = CASE WHEN @status = 'confirmed' THEN @paymentId ELSE saspay_payment_id END,
+                updated_at = now()
+            WHERE id = @orderId
+            """;
+        await using var updateOrder = new NpgsqlCommand(updateSql, connection, transaction);
+        updateOrder.Parameters.AddWithValue("orderId", orderId);
+        updateOrder.Parameters.AddWithValue("status", status);
+        updateOrder.Parameters.AddWithValue("paymentId", paymentId);
+        await updateOrder.ExecuteNonQueryAsync(cancellationToken);
+
+        if (status == "failed")
+        {
+            // pending -> failed: release the reserved stock.
+            await RestoreOrderStockAsync(connection, transaction, orderId, cancellationToken);
+        }
+        else if (currentStatus == "failed")
+        {
+            // failed -> confirmed (customer retried or paid after the reservation expired):
+            // the money was received, so take the stock again.
+            const string reserveAgainSql = """
+                UPDATE store_products p
+                SET stock_quantity = GREATEST(p.stock_quantity - i.quantity, 0),
+                    is_available = (p.stock_quantity - i.quantity > 0),
+                    updated_at = now()
+                FROM store_order_items i
+                WHERE i.order_id = @orderId
+                  AND p.slug = i.product_slug
+                """;
+            await using var reserveAgain = new NpgsqlCommand(reserveAgainSql, connection, transaction);
+            reserveAgain.Parameters.AddWithValue("orderId", orderId);
+            await reserveAgain.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return true;
+    }
+
+    public async Task<int> ExpireStaleSasPayOrdersAsync(TimeSpan maxAge, CancellationToken cancellationToken)
+    {
         await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("orderId", orderId);
-        command.Parameters.AddWithValue("status", status);
-        command.Parameters.AddWithValue("amount", decimal.ToInt32(amount));
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        const string expireSql = """
+            UPDATE store_orders
+            SET payment_status = 'failed', updated_at = now()
+            WHERE id IN (
+                SELECT id FROM store_orders
+                WHERE payment_method = 'saspay'
+                  AND payment_status = 'pending'
+                  AND created_at < now() - @maxAge
+                ORDER BY created_at
+                LIMIT 200
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id
+            """;
+        await using var expire = new NpgsqlCommand(expireSql, connection, transaction);
+        expire.Parameters.AddWithValue("maxAge", maxAge);
+        var expired = new List<Guid>();
+        await using (var reader = await expire.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                expired.Add(reader.GetGuid(0));
+            }
+        }
+
+        foreach (var orderId in expired)
+        {
+            await RestoreOrderStockAsync(connection, transaction, orderId, cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return expired.Count;
+    }
+
+    private static async Task RestoreOrderStockAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        const string restoreStockSql = """
+            UPDATE store_products p
+            SET stock_quantity = p.stock_quantity + i.quantity,
+                is_available = true,
+                updated_at = now()
+            FROM store_order_items i
+            WHERE i.order_id = @orderId
+              AND p.slug = i.product_slug
+            """;
+        await using var restoreStock = new NpgsqlCommand(restoreStockSql, connection, transaction);
+        restoreStock.Parameters.AddWithValue("orderId", orderId);
+        await restoreStock.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<CreateOrderResult> CreateOrderAsync(
         CreateOrderRequestDto request,
-        string customerId,
+        string? customerId,
         string customerName,
         string customerEmail,
         CancellationToken cancellationToken)
     {
-        var quantities = new Dictionary<string, int>(StringComparer.Ordinal);
+        // Lines are grouped by product + size + colour; stock is checked per product.
+        var lines = new Dictionary<(string Slug, string Size, string Color), int>();
         foreach (var item in request.Items!)
         {
-            var slug = item!.Slug!;
-            quantities[slug] = quantities.GetValueOrDefault(slug) + item.Quantity;
+            var key = (item!.Slug!, item.Size?.Trim() ?? string.Empty, item.Color?.Trim() ?? string.Empty);
+            lines[key] = lines.GetValueOrDefault(key) + item.Quantity;
         }
 
+        var quantities = lines
+            .GroupBy(line => line.Key.Slug, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Sum(line => line.Value), StringComparer.Ordinal);
         if (quantities.Values.Any(quantity => quantity > 50))
         {
             return new CreateOrderResult(
@@ -237,6 +364,16 @@ public sealed class StoreService(
 
         await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var zone = await ReadDeliveryZoneAsync(connection, transaction, request.DeliveryZoneId!.Value, cancellationToken);
+        if (zone is null)
+        {
+            return new CreateOrderResult(
+                StatusCodes.Status400BadRequest,
+                null,
+                "Choisissez une zone de livraison valide.");
+        }
+
         var products = await ReadCheckoutProductsAsync(
             connection,
             transaction,
@@ -264,8 +401,29 @@ public sealed class StoreService(
             }
         }
 
-        var subtotal = products.Sum(product => (long)product.PriceCfa * quantities[product.Slug]);
-        if (subtotal > int.MaxValue)
+        foreach (var ((slug, size, color), _) in lines)
+        {
+            var product = productsBySlug[slug];
+            if (!IsValidOption(product.Sizes, size))
+            {
+                return new CreateOrderResult(
+                    StatusCodes.Status400BadRequest,
+                    null,
+                    $"Choisissez une taille disponible pour {product.Name}.");
+            }
+
+            if (!IsValidOption(product.Colors, color))
+            {
+                return new CreateOrderResult(
+                    StatusCodes.Status400BadRequest,
+                    null,
+                    $"Choisissez une couleur disponible pour {product.Name}.");
+            }
+        }
+
+        var subtotal = lines.Sum(line => (long)productsBySlug[line.Key.Slug].PriceCfa * line.Value);
+        var total = subtotal + zone.FeeCfa;
+        if (total > int.MaxValue)
         {
             return new CreateOrderResult(
                 StatusCodes.Status400BadRequest,
@@ -273,6 +431,7 @@ public sealed class StoreService(
                 "Le montant de la commande est invalide.");
         }
 
+        var accessToken = OrderAccessToken.Create();
         var orderId = await InsertOrderAsync(
             connection,
             transaction,
@@ -281,17 +440,88 @@ public sealed class StoreService(
             customerEmail,
             request,
             (int)subtotal,
+            zone,
+            OrderAccessToken.Hash(accessToken),
             cancellationToken);
 
-        foreach (var product in products)
+        foreach (var ((slug, size, color), quantity) in lines)
         {
-            var quantity = quantities[product.Slug];
-            await InsertOrderItemAsync(connection, transaction, orderId, product, quantity, cancellationToken);
-            await DecrementStockAsync(connection, transaction, product.Slug, quantity, cancellationToken);
+            await InsertOrderItemAsync(connection, transaction, orderId, productsBySlug[slug], quantity, size, color, cancellationToken);
+        }
+
+        foreach (var (slug, quantity) in quantities)
+        {
+            await DecrementStockAsync(connection, transaction, slug, quantity, cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new CreateOrderResult(StatusCodes.Status201Created, orderId, null, (int)subtotal);
+        return new CreateOrderResult(StatusCodes.Status201Created, orderId, null, (int)total, accessToken);
+    }
+
+    public async Task<OrderStatusDto?> GetOrderStatusAsync(
+        Guid orderId,
+        string accessToken,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT id, status, payment_status, total_cfa, access_token_hash
+            FROM store_orders
+            WHERE id = @orderId
+            """;
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("orderId", orderId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken) ||
+            reader.IsDBNull(4) ||
+            !OrderAccessToken.Matches(accessToken, reader.GetString(4)))
+        {
+            return null;
+        }
+
+        return new OrderStatusDto(reader.GetGuid(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3));
+    }
+
+    public async Task<IReadOnlyList<DeliveryZoneDto>> GetDeliveryZonesAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT id, name, fee_cfa, delay
+            FROM store_delivery_zones
+            WHERE is_active = true
+            ORDER BY sort_order, name
+            """;
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        var zones = new List<DeliveryZoneDto>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            zones.Add(new DeliveryZoneDto(reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3)));
+        }
+
+        return zones;
+    }
+
+    private static bool IsValidOption(string[] options, string value) =>
+        options.Length == 0 ? value.Length == 0 : options.Contains(value, StringComparer.Ordinal);
+
+    private static async Task<DeliveryZoneDto?> ReadDeliveryZoneAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        long zoneId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT id, name, fee_cfa, delay
+            FROM store_delivery_zones
+            WHERE id = @id AND is_active = true
+            """;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("id", zoneId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken)
+            ? new DeliveryZoneDto(reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3))
+            : null;
     }
 
     private NpgsqlDataSource GetDataSource() =>
@@ -352,7 +582,7 @@ public sealed class StoreService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT slug, name, price_cfa, stock_quantity, is_available, is_active
+            SELECT slug, name, price_cfa, stock_quantity, is_available, is_active, sizes::text, colors::text
             FROM store_products
             WHERE slug = ANY(@slugs)
             ORDER BY slug
@@ -371,7 +601,9 @@ public sealed class StoreService(
                 reader.GetInt32(2),
                 reader.GetInt32(3),
                 reader.GetBoolean(4),
-                reader.GetBoolean(5)));
+                reader.GetBoolean(5),
+                JsonSerializer.Deserialize<string[]>(reader.GetString(6)) ?? [],
+                JsonSerializer.Deserialize<string[]>(reader.GetString(7)) ?? []));
         }
 
         return products;
@@ -380,23 +612,27 @@ public sealed class StoreService(
     private static async Task<Guid> InsertOrderAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        string customerId,
+        string? customerId,
         string customerName,
         string customerEmail,
         CreateOrderRequestDto request,
         int subtotal,
+        DeliveryZoneDto zone,
+        string accessTokenHash,
         CancellationToken cancellationToken)
     {
         const string sql = """
             INSERT INTO store_orders
-                (customer_id, customer_name, customer_email, phone, city, delivery_address, delivery_notes, payment_method, subtotal_cfa)
+                (customer_id, customer_name, customer_email, phone, city, delivery_address, delivery_notes,
+                 payment_method, subtotal_cfa, delivery_zone, delivery_fee_cfa, total_cfa, access_token_hash)
             VALUES
-                (@customerId, @customerName, @customerEmail, @phone, @city, @deliveryAddress, @deliveryNotes, @paymentMethod, @subtotal)
+                (@customerId, @customerName, @customerEmail, @phone, @city, @deliveryAddress, @deliveryNotes,
+                 @paymentMethod, @subtotal, @deliveryZone, @deliveryFee, @total, @accessTokenHash)
             RETURNING id
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
-        command.Parameters.AddWithValue("customerId", customerId);
+        command.Parameters.AddWithValue("customerId", (object?)customerId ?? DBNull.Value);
         command.Parameters.AddWithValue("customerName", customerName);
         command.Parameters.AddWithValue("customerEmail", customerEmail);
         command.Parameters.AddWithValue("phone", request.Phone!.Trim());
@@ -405,6 +641,10 @@ public sealed class StoreService(
         command.Parameters.AddWithValue("deliveryNotes", request.DeliveryNotes?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("paymentMethod", request.PaymentMethod!);
         command.Parameters.AddWithValue("subtotal", subtotal);
+        command.Parameters.AddWithValue("deliveryZone", zone.Name);
+        command.Parameters.AddWithValue("deliveryFee", zone.FeeCfa);
+        command.Parameters.AddWithValue("total", subtotal + zone.FeeCfa);
+        command.Parameters.AddWithValue("accessTokenHash", accessTokenHash);
         return (Guid)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
@@ -414,13 +654,15 @@ public sealed class StoreService(
         Guid orderId,
         CheckoutProduct product,
         int quantity,
+        string size,
+        string color,
         CancellationToken cancellationToken)
     {
         const string sql = """
             INSERT INTO store_order_items
-                (order_id, product_slug, product_name, unit_price_cfa, quantity, line_total_cfa)
+                (order_id, product_slug, product_name, unit_price_cfa, quantity, line_total_cfa, size, color)
             VALUES
-                (@orderId, @slug, @name, @price, @quantity, @lineTotal)
+                (@orderId, @slug, @name, @price, @quantity, @lineTotal, @size, @color)
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -430,6 +672,8 @@ public sealed class StoreService(
         command.Parameters.AddWithValue("price", product.PriceCfa);
         command.Parameters.AddWithValue("quantity", quantity);
         command.Parameters.AddWithValue("lineTotal", checked(product.PriceCfa * quantity));
+        command.Parameters.AddWithValue("size", size);
+        command.Parameters.AddWithValue("color", color);
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
@@ -460,5 +704,7 @@ public sealed class StoreService(
         int PriceCfa,
         int StockQuantity,
         bool IsAvailable,
-        bool IsActive);
+        bool IsActive,
+        string[] Sizes,
+        string[] Colors);
 }

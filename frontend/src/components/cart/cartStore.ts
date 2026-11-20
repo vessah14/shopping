@@ -2,32 +2,56 @@
 
 import { useSyncExternalStore } from "react";
 
-export type CartLine = { slug: string; quantity: number };
+/** One cart line = one product in one size and one colour ("" when the product has none). */
+export type CartLine = { slug: string; size: string; color: string; quantity: number };
+export type CartOptions = { size?: string; color?: string; name?: string };
+export type CartAddition = CartLine & { name: string };
+
 const maxCartQuantity = 50;
+const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function lineKey(line: { slug: string; size?: string; color?: string }) {
+  return `${line.slug}|${line.size ?? ""}|${line.color ?? ""}`;
+}
+
+/** Total quantity of a product in the cart, all sizes and colours included. */
+export function productQuantity(items: CartLine[], slug: string) {
+  return items.reduce((total, line) => line.slug === slug ? total + line.quantity : total, 0);
+}
+
+function readOption(value: unknown) {
+  return typeof value === "string" && value.trim().length <= 40 ? value.trim() : null;
+}
 
 export function normalizeCart(value: unknown): CartLine[] {
   if (!Array.isArray(value)) return [];
-  const quantities = new Map<string, number>();
+  const lines = new Map<string, CartLine>();
   for (const line of value) {
     if (
       !line ||
       typeof line !== "object" ||
       !("slug" in line) ||
       typeof line.slug !== "string" ||
-      !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(line.slug) ||
+      !slugPattern.test(line.slug) ||
       !("quantity" in line) ||
       !Number.isSafeInteger(line.quantity) ||
       (line.quantity as number) < 1
     ) continue;
-    quantities.set(line.slug, Math.min(maxCartQuantity, (quantities.get(line.slug) ?? 0) + (line.quantity as number)));
+    const size = "size" in line ? readOption(line.size) : "";
+    const color = "color" in line ? readOption(line.color) : "";
+    if (size === null || color === null) continue;
+    const key = lineKey({ slug: line.slug, size, color });
+    const quantity = Math.min(maxCartQuantity, (lines.get(key)?.quantity ?? 0) + (line.quantity as number));
+    lines.set(key, { slug: line.slug, size, color, quantity });
   }
-  return [...quantities].map(([slug, quantity]) => ({ slug, quantity }));
+  return [...lines.values()];
 }
 
 const serverSnapshot: CartLine[] = [];
 let snapshot: CartLine[] = serverSnapshot;
 let isLoaded = false;
 const listeners = new Set<() => void>();
+const addListeners = new Set<(addition: CartAddition) => void>();
 
 function readStorage() {
   if (typeof window === "undefined") return serverSnapshot;
@@ -77,27 +101,38 @@ function save(next: CartLine[]) {
   notify();
 }
 
-export function addCartItem(slug: string) {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return;
-  const current = getSnapshot();
-  const existing = current.find((line) => line.slug === slug);
-  if (existing?.quantity === maxCartQuantity) return;
-  save(existing
-    ? current.map((line) => line.slug === slug ? { ...line, quantity: Math.min(maxCartQuantity, line.quantity + 1) } : line)
-    : [...current, { slug, quantity: 1 }]);
+/** Lets the "added to cart" notification react to every addition. */
+export function subscribeToCartAdditions(listener: (addition: CartAddition) => void) {
+  addListeners.add(listener);
+  return () => { addListeners.delete(listener); };
 }
 
-export function setCartItemQuantity(slug: string, quantity: number) {
+export function addCartItem(slug: string, options: CartOptions = {}) {
+  if (!slugPattern.test(slug)) return;
+  const size = options.size?.trim() ?? "";
+  const color = options.color?.trim() ?? "";
+  const current = getSnapshot();
+  if (productQuantity(current, slug) >= maxCartQuantity) return;
+  const key = lineKey({ slug, size, color });
+  const existing = current.find((line) => lineKey(line) === key);
+  const added: CartLine = { slug, size, color, quantity: (existing?.quantity ?? 0) + 1 };
+  save(existing
+    ? current.map((line) => lineKey(line) === key ? added : line)
+    : [...current, added]);
+  addListeners.forEach((listener) => listener({ ...added, name: options.name ?? slug }));
+}
+
+export function setCartItemQuantity(key: string, quantity: number) {
   if (quantity < 1) {
-    removeCartItem(slug);
+    removeCartItem(key);
     return;
   }
   if (!Number.isSafeInteger(quantity)) return;
-  save(getSnapshot().map((line) => line.slug === slug ? { ...line, quantity: Math.min(maxCartQuantity, quantity) } : line));
+  save(getSnapshot().map((line) => lineKey(line) === key ? { ...line, quantity: Math.min(maxCartQuantity, quantity) } : line));
 }
 
-export function removeCartItem(slug: string) {
-  save(getSnapshot().filter((line) => line.slug !== slug));
+export function removeCartItem(key: string) {
+  save(getSnapshot().filter((line) => lineKey(line) !== key));
 }
 
 export function clearCart() {
