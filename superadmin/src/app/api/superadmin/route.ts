@@ -112,9 +112,10 @@ export async function GET(request: NextRequest) {
 
   if (section === "payouts") {
     const result = await pool.query(
-      `SELECT id, order_id AS "orderId", seller_name AS "sellerName", destination,
-              amount_cfa AS "amountCfa", status, created_at AS "createdAt"
-       FROM store_seller_payouts ORDER BY created_at DESC LIMIT 500`,
+      `SELECT order_id AS id, order_id AS "orderId", destination,
+              amount_cfa AS "amountCfa", status, fapshi_trans_id AS "transactionId",
+              details, created_at AS "createdAt"
+       FROM store_owner_payouts ORDER BY created_at DESC LIMIT 500`,
     );
     return NextResponse.json(result.rows);
   }

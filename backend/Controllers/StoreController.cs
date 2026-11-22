@@ -11,7 +11,7 @@ namespace EspaceShoppingPlus.Api.Controllers;
 [Route("api/store")]
 public sealed partial class StoreController(
     IStoreService storeService,
-    ISasPayPaymentService sasPayPaymentService,
+    IFapshiPaymentService fapshiPaymentService,
     IStoreApiKeyValidator apiKeyValidator,
     ILogger<StoreController> logger) : ControllerBase
 {
@@ -136,9 +136,9 @@ public sealed partial class StoreController(
             return ServiceUnavailable("Le service de commande est indisponible.");
         }
 
-        if (request.PaymentMethod == "saspay" && !sasPayPaymentService.IsConfigured)
+        if (request.PaymentMethod == "fapshi" && !fapshiPaymentService.IsConfigured)
         {
-            return ServiceUnavailable("Le paiement SasPay n’est pas encore configuré.");
+            return ServiceUnavailable("Le paiement Fapshi n’est pas encore configuré.");
         }
 
         try
@@ -155,32 +155,30 @@ public sealed partial class StoreController(
                 return StatusCode(result.StatusCode, new { error = result.Error });
             }
 
-            if (request.PaymentMethod == "saspay")
+            if (request.PaymentMethod == "fapshi")
             {
-                if (result.TotalCfa < 1)
+                if (result.TotalCfa < 100)
                 {
-                    await storeService.FailSasPayOrderAndRestoreStockAsync(result.Id.Value, cancellationToken);
-                    return BadRequest(new { error = "Le montant de la commande est invalide pour un paiement SasPay." });
+                    await storeService.FailFapshiOrderAndRestoreStockAsync(result.Id.Value, cancellationToken);
+                    return BadRequest(new { error = "Le montant minimum pour un paiement Fapshi est de 100 FCFA." });
                 }
 
                 try
                 {
-                    var checkout = await sasPayPaymentService.CreateCheckoutSessionAsync(
+                    var checkout = await fapshiPaymentService.CreateCheckoutSessionAsync(
                         result.Id.Value,
                         result.TotalCfa,
                         customerEmail,
-                        customerName,
-                        request.Phone!.Trim(),
                         result.AccessToken,
                         cancellationToken);
-                    if (!await storeService.SaveSasPayCheckoutSessionAsync(
+                    if (!await storeService.SaveFapshiCheckoutSessionAsync(
                         result.Id.Value,
-                        checkout.Id,
+                        checkout.TransId,
                         checkout.CheckoutUrl,
                         cancellationToken))
                     {
-                        logger.LogError("Unable to persist SasPay checkout session for order {OrderId}.", result.Id);
-                        await storeService.FailSasPayOrderAndRestoreStockAsync(
+                        logger.LogError("Unable to persist Fapshi checkout session for order {OrderId}.", result.Id);
+                        await storeService.FailFapshiOrderAndRestoreStockAsync(
                             result.Id.Value,
                             CancellationToken.None);
                         return ServiceUnavailable("La session de paiement a été créée mais ne peut pas être enregistrée.");
@@ -190,13 +188,13 @@ public sealed partial class StoreController(
                         StatusCodes.Status201Created,
                         new CreateOrderResponseDto(result.Id.Value, result.AccessToken, checkout.CheckoutUrl));
                 }
-                catch (Exception error) when (error is SasPayException or HttpRequestException or TaskCanceledException)
+                catch (Exception error) when (error is FapshiException or HttpRequestException or TaskCanceledException)
                 {
-                    logger.LogError(error, "Unable to start SasPay payment for order {OrderId}.", result.Id);
-                    await storeService.FailSasPayOrderAndRestoreStockAsync(
+                    logger.LogError(error, "Unable to start Fapshi payment for order {OrderId}.", result.Id);
+                    await storeService.FailFapshiOrderAndRestoreStockAsync(
                         result.Id.Value,
                         CancellationToken.None);
-                    return ServiceUnavailable("Impossible de démarrer le paiement SasPay. Réessayez votre commande.");
+                    return ServiceUnavailable("Impossible de démarrer le paiement Fapshi. Réessayez votre commande.");
                 }
             }
 
@@ -291,7 +289,7 @@ public sealed partial class StoreController(
         var deliveryNotes = request.DeliveryNotes?.Trim() ?? string.Empty;
         if (!PhoneRegex().IsMatch(phone) || city.Length is < 2 or > 100 ||
             deliveryAddress.Length is < 8 or > 300 || deliveryNotes.Length > 500 ||
-        request.PaymentMethod is not "saspay")
+        request.PaymentMethod is not "fapshi")
         {
             error = "Vérifiez votre téléphone, ville, adresse et moyen de paiement.";
             return false;

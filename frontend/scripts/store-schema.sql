@@ -47,30 +47,29 @@ CREATE TABLE IF NOT EXISTS store_orders (
     CHECK (status IN ('pending', 'confirmed', 'preparing', 'shipped', 'delivered', 'cancelled')),
   payment_method text NOT NULL
     CONSTRAINT store_orders_payment_method_check
-    CHECK (payment_method IN ('cash_on_delivery', 'mtn_money', 'orange_money', 'saspay')),
+    CHECK (payment_method IN ('cash_on_delivery', 'mtn_money', 'orange_money', 'saspay', 'fapshi')),
   payment_status text NOT NULL DEFAULT 'pending'
     CHECK (payment_status IN ('pending', 'confirmed', 'failed', 'refunded')),
-  saspay_checkout_session_id text UNIQUE,
-  saspay_checkout_url text,
+  fapshi_trans_id text UNIQUE,
+  fapshi_checkout_url text,
   subtotal_cfa integer NOT NULL CHECK (subtotal_cfa >= 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 ALTER TABLE store_orders
-  ADD COLUMN IF NOT EXISTS saspay_checkout_session_id text UNIQUE;
+  ADD COLUMN IF NOT EXISTS fapshi_trans_id text UNIQUE;
 ALTER TABLE store_orders
-  ADD COLUMN IF NOT EXISTS saspay_checkout_url text;
-ALTER TABLE store_orders
-  ADD COLUMN IF NOT EXISTS saspay_payment_id text;
-CREATE INDEX IF NOT EXISTS store_orders_pending_saspay_idx
+  ADD COLUMN IF NOT EXISTS fapshi_checkout_url text;
+DROP INDEX IF EXISTS store_orders_pending_saspay_idx;
+CREATE INDEX IF NOT EXISTS store_orders_pending_fapshi_idx
   ON store_orders (created_at)
-  WHERE payment_method = 'saspay' AND payment_status = 'pending';
+  WHERE payment_method = 'fapshi' AND payment_status = 'pending';
 ALTER TABLE store_orders
   DROP CONSTRAINT IF EXISTS store_orders_payment_method_check;
 ALTER TABLE store_orders
   ADD CONSTRAINT store_orders_payment_method_check
-  CHECK (payment_method IN ('cash_on_delivery', 'mtn_money', 'orange_money', 'saspay'));
+  CHECK (payment_method IN ('cash_on_delivery', 'mtn_money', 'orange_money', 'saspay', 'fapshi'));
 
 CREATE TABLE IF NOT EXISTS store_order_items (
   id bigserial PRIMARY KEY,
@@ -96,6 +95,32 @@ CREATE TABLE IF NOT EXISTS store_seller_payouts (
 
 CREATE INDEX IF NOT EXISTS store_seller_payouts_status_created_idx
   ON store_seller_payouts (status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS store_owner_payouts (
+  order_id uuid PRIMARY KEY REFERENCES store_orders(id) ON DELETE RESTRICT,
+  amount_cfa integer CHECK (amount_cfa IS NULL OR amount_cfa >= 0),
+  destination text,
+  external_id text NOT NULL UNIQUE,
+  user_id text NOT NULL UNIQUE,
+  base_url text NOT NULL,
+  fapshi_trans_id text UNIQUE,
+  status text NOT NULL CHECK (
+    status IN ('disabled', 'queued', 'submitting', 'submitted', 'successful', 'failed', 'manual_review')
+  ),
+  details text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (
+    status NOT IN ('queued', 'submitting', 'submitted', 'successful', 'failed')
+    OR amount_cfa BETWEEN 100 AND 500000 AND NULLIF(btrim(destination), '') IS NOT NULL
+  ),
+  CHECK (
+    status NOT IN ('submitted', 'successful', 'failed') OR fapshi_trans_id IS NOT NULL
+  )
+);
+
+CREATE INDEX IF NOT EXISTS store_owner_payouts_status_created_idx
+  ON store_owner_payouts (status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS store_comments (
   id bigserial PRIMARY KEY,

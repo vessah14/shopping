@@ -20,6 +20,7 @@ const paymentMethodLabels: Record<string, string> = {
   mtn_money: "MTN Mobile Money",
   orange_money: "Orange Money",
   saspay: "SasPay",
+  fapshi: "Fapshi",
 };
 
 export default function AccountDashboard({ name, email, isAdmin }: AccountDashboardProps) {

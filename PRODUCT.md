@@ -8,7 +8,7 @@ web
 
 ## Users
 
-Particuliers à Douala, surtout des femmes et des jeunes adultes, qui achètent depuis leur téléphone. Ils parcourent le catalogue, puis commandent sur WhatsApp ou paient en Mobile Money via SasPay.
+Particuliers à Douala, surtout des femmes et des jeunes adultes, qui achètent depuis leur téléphone. Ils parcourent le catalogue, puis commandent sur WhatsApp ou paient en Mobile Money via Fapshi.
 
 Audience secondaire : l'équipe de la boutique, qui gère produits, commandes, annonces et versements dans l'application `superadmin/`.
 
@@ -23,7 +23,7 @@ Une seule boutique pour la mode, la beauté et les cheveux : vêtements femmes, 
 ## Operating Context
 
 - Achat surtout sur mobile, souvent avec une connexion lente ou limitée.
-- La commande passe par WhatsApp (panier envoyé en message) ou par le checkout hébergé SasPay en XAF.
+- La commande passe par WhatsApp (panier envoyé en message) ou par le checkout hébergé Fapshi en XAF.
 - Livraison par zones dans Douala (`DeliveryZone`), avec la possibilité de venir au magasin.
 - Comptes clients via Better Auth (`/compte`, `/connexion`, `/inscription`).
 

@@ -93,7 +93,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
           deliveryAddress,
           deliveryNotes,
           deliveryZoneId: zone.id,
-          paymentMethod: "saspay",
+          paymentMethod: "fapshi",
         }),
       });
       const result: unknown = await response.json().catch(() => null);
@@ -112,7 +112,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
       }
 
       const checkoutUrl = new URL(payload.checkoutUrl);
-      if (checkoutUrl.protocol !== "https:" || checkoutUrl.hostname !== "pay.saspay.me") {
+      if (checkoutUrl.protocol !== "https:" || !(checkoutUrl.hostname === "fapshi.com" || checkoutUrl.hostname.endsWith(".fapshi.com"))) {
         throw new Error("L’adresse de paiement reçue n’est pas valide.");
       }
 
@@ -246,7 +246,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
                   <div className="checkout-payment-methods" aria-label="Moyens de paiement acceptés">
                     <span className="payment-badge payment-badge-mtn"><strong>MTN</strong><span>Mobile Money</span></span>
                     <span className="payment-badge payment-badge-orange"><strong>Orange</strong><span>Money</span></span>
-                    <small>Paiement sécurisé via SasPay</small>
+                    <small>Paiement sécurisé via Fapshi</small>
                   </div>
                 </form>
               )}

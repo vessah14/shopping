@@ -21,7 +21,7 @@ export default async function PaymentReturnPage({ searchParams }: PaymentReturnP
     <main className="inner-page">
       <section className="cart-page-section">
         <div className="checkout-panel">
-          <p className="eyebrow">PAIEMENT SASPAY</p>
+          <p className="eyebrow">PAIEMENT FAPSHI</p>
           <h1>Vérification de votre paiement</h1>
           {id ? (
             <PaymentStatusPoller orderId={id} accessToken={accessToken} />

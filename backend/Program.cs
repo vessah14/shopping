@@ -26,10 +26,14 @@ if (!string.IsNullOrWhiteSpace(storeConnectionString))
 }
 
 builder.Services.AddSingleton<IStoreApiKeyValidator, StoreApiKeyValidator>();
-builder.Services.Configure<SasPayOptions>(
-    builder.Configuration.GetSection(SasPayOptions.SectionName));
-builder.Services.AddHttpClient<ISasPayPaymentService, SasPayPaymentService>(
+builder.Services.Configure<FapshiOptions>(
+    builder.Configuration.GetSection(FapshiOptions.SectionName));
+builder.Services.AddHttpClient<IFapshiPaymentService, FapshiPaymentService>(
     client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient<IFapshiPayoutService, FapshiPayoutService>(
+    client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<FapshiPayoutOrchestrator>();
+builder.Services.AddHostedService<FapshiPayoutWorker>();
 builder.Services.AddHostedService<StalePaymentCleanupService>();
 builder.Services.AddScoped<IStoreService>(services =>
     new StoreService(services.GetService<NpgsqlDataSource>()));

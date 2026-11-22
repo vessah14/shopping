@@ -21,29 +21,69 @@ public interface IStoreService
         string customerEmail,
         CancellationToken cancellationToken);
 
-    Task<bool> SaveSasPayCheckoutSessionAsync(
+    Task<bool> SaveFapshiCheckoutSessionAsync(
         Guid orderId,
-        string sessionId,
+        string transId,
         string checkoutUrl,
         CancellationToken cancellationToken);
 
-    Task<bool> FailSasPayOrderAndRestoreStockAsync(
+    Task<bool> FailFapshiOrderAndRestoreStockAsync(
         Guid orderId,
         CancellationToken cancellationToken);
 
-    Task<bool> UpdateSasPayPaymentStatusAsync(
+    Task<FapshiPaymentUpdateResult> UpdateFapshiPaymentStatusAsync(
         Guid orderId,
-        string paymentId,
+        string transId,
         string status,
-        decimal amount,
-        string currency,
+        int amount,
+        OwnerPayoutReservation? ownerPayout,
+        CancellationToken cancellationToken);
+
+    Task<OwnerPayout?> TryStartOwnerPayoutAsync(Guid orderId, CancellationToken cancellationToken);
+
+    Task<OwnerPayout?> TryStartNextOwnerPayoutAsync(CancellationToken cancellationToken);
+
+    Task<int> FlagStaleOwnerPayoutsAsync(CancellationToken cancellationToken);
+
+    Task<bool> CompleteOwnerPayoutSubmissionAsync(
+        Guid orderId,
+        string status,
+        string? transId,
+        string? details,
+        CancellationToken cancellationToken);
+
+    Task<bool> UpdateOwnerPayoutStatusAsync(
+        Guid orderId,
+        string transId,
+        int amount,
+        string status,
         CancellationToken cancellationToken);
 
     Task<OrderStatusDto?> GetOrderStatusAsync(Guid orderId, string accessToken, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<DeliveryZoneDto>> GetDeliveryZonesAsync(CancellationToken cancellationToken);
 
-    Task<int> ExpireStaleSasPayOrdersAsync(TimeSpan maxAge, CancellationToken cancellationToken);
-
-    Task RecordSimulatedSellerPayoutsAsync(Guid orderId, CancellationToken cancellationToken);
+    Task<int> ExpireStaleFapshiOrdersAsync(TimeSpan maxAge, CancellationToken cancellationToken);
 }
+
+public enum FapshiPaymentUpdateResult
+{
+    Rejected,
+    AlreadyProcessed,
+    Updated,
+}
+
+public sealed record OwnerPayoutReservation(
+    int? AmountCfa,
+    string? PhoneNumber,
+    string BaseUrl,
+    bool Enabled,
+    bool ConfigurationComplete);
+
+public sealed record OwnerPayout(
+    Guid OrderId,
+    int AmountCfa,
+    string PhoneNumber,
+    string ExternalId,
+    string UserId,
+    string BaseUrl);

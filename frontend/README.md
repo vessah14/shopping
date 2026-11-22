@@ -63,13 +63,13 @@ Elle utilise les mêmes variables `DATABASE_URL`, `BETTER_AUTH_SECRET` et `SUPER
 
 Les produits importés commencent avec un stock à zéro et sont marqués indisponibles : renseignez les quantités réelles avant de les publier comme disponibles. Les commandes exigent un compte client; l’inventaire est vérifié puis décrémenté dans une transaction PostgreSQL. Une annulation approuvée par un administrateur restitue le stock. Les paiements Mobile Money sont enregistrés comme en attente jusqu’à leur confirmation manuelle.
 
-### Paiement SasPay
+### Paiement Fapshi
 
-Le checkout hébergé SasPay est disponible pour les commandes au Cameroun (XAF). Configurez le backend .NET avec `SasPay__ApiKey`, `SasPay__WebhookSecret` et `SasPay__ReturnBaseUrl` (par exemple `http://localhost:3000` en développement). Utilisez une clé `sk_test_...` pour les essais, puis une clé `sk_live_...` en production; ne placez jamais ces secrets dans le frontend.
+La page de paiement hébergée Fapshi est disponible pour les commandes au Cameroun (XAF, minimum 100 FCFA). Configurez le backend .NET avec `Fapshi__ApiUser`, `Fapshi__ApiKey`, `Fapshi__WebhookSecret` et `Fapshi__ReturnBaseUrl` (par exemple `http://localhost:3000` en développement). Pour les essais, utilisez les identifiants sandbox avec `Fapshi__BaseUrl=https://sandbox.fapshi.com`; en production, les identifiants live (`https://live.fapshi.com`, valeur par défaut). Ne placez jamais ces secrets dans le frontend.
 
 Le suivi des versements vendeurs est actuellement une simulation : configurez le nom et le numéro Mobile Money dans la fiche produit du superadmin, puis consultez **Versements vendeurs** après une commande payée et confirmée. Aucun transfert au vendeur n’est déclenché. Exécutez `npm run db:migrate` pour ajouter les colonnes vendeur et la table de suivi à une base existante.
 
-Après configuration, relancez `npm run db:migrate` pour ajouter les champs de session SasPay et autoriser ce moyen de paiement. Dans le tableau de bord SasPay, configurez l’URL publique `https://<hôte-backend>/api/webhooks/saspay`, copiez son secret de signature dans `SasPay__WebhookSecret`, et abonnez le webhook à `transaction.success`, `transaction.failed` et `transaction.cancelled`. Le backend vérifie la signature horodatée puis revérifie l’état, le montant et la devise via l’API SasPay avant de mettre à jour la commande. Le retour navigateur ne confirme jamais un paiement à lui seul.
+Après configuration, relancez `npm run db:migrate` pour ajouter les champs de transaction Fapshi et autoriser ce moyen de paiement. Dans le tableau de bord Fapshi, configurez l’URL publique `https://<hôte-backend>/api/webhooks/fapshi` et un secret de webhook identique à `Fapshi__WebhookSecret`. Le backend vérifie l’en-tête `x-wh-secret`, puis revérifie l’état, le montant et la commande via `GET /payment-status/{transId}` avant de mettre à jour la commande. Le retour navigateur ne confirme jamais un paiement à lui seul.
 
 ### Annonces de la boutique
 Dans le superadmin, ouvrez **Annonces** pour consulter le tableau, créer une annonce, modifier ses dates ou son texte, la désactiver ou la supprimer. Toutes les annonces actives défilent dans le bandeau de la boutique. Les annonces déjà enregistrées sont reprises lors de la migration.

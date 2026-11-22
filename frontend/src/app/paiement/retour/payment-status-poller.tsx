@@ -17,7 +17,7 @@ function isOrderStatus(value: unknown): value is Order {
 }
 
 export default function PaymentStatusPoller({ orderId, accessToken }: { orderId: string; accessToken: string }) {
-  const [message, setMessage] = useState("Nous attendons la confirmation sécurisée de SasPay…");
+  const [message, setMessage] = useState("Nous attendons la confirmation sécurisée de Fapshi…");
 
   useEffect(() => {
     if (!accessToken) return;
@@ -58,7 +58,7 @@ export default function PaymentStatusPoller({ orderId, accessToken }: { orderId:
         attempts += 1;
         setMessage(
           attempts < 40
-            ? "Nous attendons la confirmation sécurisée de SasPay…"
+            ? "Nous attendons la confirmation sécurisée de Fapshi…"
             : "La confirmation prend plus de temps que prévu. Revenez sur cette page dans quelques instants.",
         );
         if (attempts < 40) {

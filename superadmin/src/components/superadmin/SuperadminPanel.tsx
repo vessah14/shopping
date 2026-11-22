@@ -25,7 +25,16 @@ type Product = {
   sizes: string[]; colors: string[]; stockQuantity: number; isAvailable: boolean; active: boolean;
   isPromo: boolean; sellerName: string; sellerMobileMoney: string | null;
 };
-type SellerPayout = { id: number; orderId: string; sellerName: string; destination: string; amountCfa: number; status: string; createdAt: string };
+type SellerPayout = {
+  id: string;
+  orderId: string;
+  destination: string | null;
+  amountCfa: number | null;
+  status: string;
+  transactionId: string | null;
+  details: string | null;
+  createdAt: string;
+};
 type Category = { name: string; slug: string; image: string; active: boolean; featured: boolean; sortOrder: number };
 type OrderItem = { slug: string; name: string; unitPriceCfa: number; quantity: number; lineTotalCfa: number };
 type Order = {
@@ -51,7 +60,7 @@ const sectionDescriptions: Record<Section, string> = {
   products: "Gérez votre catalogue, les prix et les quantités disponibles.",
   categories: "Organisez les rayons et choisissez ceux qui apparaissent sur l’accueil.",
   orders: "Consultez les commandes et mettez à jour leur préparation et leur paiement.",
-  payouts: "Suivez les montants calculés pour les vendeurs après confirmation du paiement.",
+  payouts: "Suivez les décaissements du propriétaire après confirmation du paiement.",
   customers: "Retrouvez les comptes clients inscrits sur la boutique.",
   announcements: "Rédigez une annonce, programmez sa période d’affichage et activez ou désactivez le bandeau.",
 };
@@ -63,6 +72,7 @@ const paymentMethods: Record<string, string> = {
   mtn_money: "MTN Mobile Money",
   orange_money: "Orange Money",
   saspay: "SasPay",
+  fapshi: "Fapshi",
 };
 const statusLabels: Record<string, string> = {
   pending: "À confirmer", confirmed: "Confirmée", preparing: "En préparation",
@@ -601,12 +611,20 @@ function OrdersSection({ orders, busy, onChange }: { orders: Order[]; busy: bool
 }
 
 function PayoutsSection({ payouts }: { payouts: SellerPayout[] }) {
-  const total = payouts.reduce((sum, payout) => sum + payout.amountCfa, 0);
+  const statusLabels: Record<string, string> = {
+    disabled: "Désactivé",
+    queued: "En attente",
+    submitting: "En cours d’envoi",
+    submitted: "Envoyé à Fapshi",
+    successful: "Réussi",
+    failed: "Échoué",
+    manual_review: "Vérification manuelle",
+  };
   return <section className="superadmin-list superadmin-full-list">
-    <div className="superadmin-list-heading"><div><p className="superadmin-welcome-kicker">SIMULATION UNIQUEMENT</p><h2>Versements vendeurs <span>{payouts.length}</span></h2><p>Montant calculé après paiement SasPay confirmé : {formatPrice(total)}. Aucun transfert réel n’est effectué.</p></div></div>
-    <div className="superadmin-table-wrap"><table className="superadmin-table"><thead><tr><th>Commande</th><th>Vendeur</th><th>Destination Mobile Money</th><th>Montant simulé</th><th>Date</th><th>État</th></tr></thead><tbody>
-      {payouts.map((payout) => <tr key={payout.id}><td>#{payout.orderId.slice(0, 8).toUpperCase()}</td><td>{payout.sellerName}</td><td>{payout.destination}</td><td><strong>{formatPrice(payout.amountCfa)}</strong></td><td>{formatDate(payout.createdAt)}</td><td><span className="superadmin-stock-badge is-available">Simulation</span></td></tr>)}
-      {!payouts.length && <tr><td colSpan={6}><p className="superadmin-empty">Aucun versement simulé. Configurez le vendeur et son numéro sur un produit, puis effectuez un paiement de test confirmé.</p></td></tr>}
+    <div className="superadmin-list-heading"><div><p className="superadmin-welcome-kicker">SUIVI FAPSHI</p><h2>Décaissements propriétaire <span>{payouts.length}</span></h2><p>Les montants sont nets des frais Fapshi. Un statut « Envoyé à Fapshi » n’est pas encore une confirmation de réception.</p></div></div>
+    <div className="superadmin-table-wrap"><table className="superadmin-table"><thead><tr><th>Commande</th><th>Bénéficiaire</th><th>Destination Mobile Money</th><th>Montant net</th><th>Date</th><th>État</th></tr></thead><tbody>
+      {payouts.map((payout) => <tr key={payout.id}><td>#{payout.orderId.slice(0, 8).toUpperCase()}</td><td>Propriétaire</td><td>{payout.destination ?? "À configurer"}</td><td><strong>{payout.amountCfa === null ? "À vérifier" : formatPrice(payout.amountCfa)}</strong></td><td>{formatDate(payout.createdAt)}</td><td><span className="superadmin-stock-badge">{statusLabels[payout.status] ?? payout.status}</span>{payout.transactionId && <small>{payout.transactionId}</small>}{payout.details && <small>{payout.details}</small>}</td></tr>)}
+      {!payouts.length && <tr><td colSpan={6}><p className="superadmin-empty">Aucun décaissement enregistré.</p></td></tr>}
     </tbody></table></div>
   </section>;
 }

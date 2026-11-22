@@ -5,12 +5,12 @@ using Npgsql;
 namespace EspaceShoppingPlus.Api.Services;
 
 /// <summary>
-/// Periodically releases the stock reserved by SasPay orders that were never paid
+/// Periodically releases the stock reserved by Fapshi orders that were never paid
 /// (customer closed the payment page, no webhook received).
 /// </summary>
 public sealed class StalePaymentCleanupService(
     IServiceScopeFactory scopeFactory,
-    IOptions<SasPayOptions> options,
+    IOptions<FapshiOptions> options,
     ILogger<StalePaymentCleanupService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(10);
@@ -30,15 +30,15 @@ public sealed class StalePaymentCleanupService(
                     return;
                 }
 
-                var expired = await storeService.ExpireStaleSasPayOrdersAsync(maxAge, stoppingToken);
+                var expired = await storeService.ExpireStaleFapshiOrdersAsync(maxAge, stoppingToken);
                 if (expired > 0)
                 {
-                    logger.LogInformation("Released stock of {Count} unpaid SasPay order(s).", expired);
+                    logger.LogInformation("Released stock of {Count} unpaid Fapshi order(s).", expired);
                 }
             }
             catch (NpgsqlException error)
             {
-                logger.LogWarning(error, "Unable to expire unpaid SasPay orders.");
+                logger.LogWarning(error, "Unable to expire unpaid Fapshi orders.");
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

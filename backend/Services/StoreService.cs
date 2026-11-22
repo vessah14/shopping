@@ -93,56 +93,32 @@ public sealed class StoreService(
         return orders;
     }
 
-    public async Task<bool> SaveSasPayCheckoutSessionAsync(
+    public async Task<bool> SaveFapshiCheckoutSessionAsync(
         Guid orderId,
-        string sessionId,
+        string transId,
         string checkoutUrl,
         CancellationToken cancellationToken)
     {
         const string sql = """
             UPDATE store_orders
-            SET saspay_checkout_session_id = @sessionId,
-                saspay_checkout_url = @checkoutUrl,
+            SET fapshi_trans_id = @transId,
+                fapshi_checkout_url = @checkoutUrl,
                 updated_at = now()
             WHERE id = @orderId
-              AND payment_method = 'saspay'
+              AND payment_method = 'fapshi'
               AND payment_status = 'pending'
-              AND saspay_checkout_session_id IS NULL
+              AND fapshi_trans_id IS NULL
             """;
 
         await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("orderId", orderId);
-        command.Parameters.AddWithValue("sessionId", sessionId);
+        command.Parameters.AddWithValue("transId", transId);
         command.Parameters.AddWithValue("checkoutUrl", checkoutUrl);
         return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
     }
 
-    public async Task RecordSimulatedSellerPayoutsAsync(Guid orderId, CancellationToken cancellationToken)
-    {
-        const string sql = """
-            INSERT INTO store_seller_payouts (order_id, seller_name, destination, amount_cfa)
-            SELECT i.order_id,
-                   p.seller_name,
-                   COALESCE(NULLIF(btrim(p.seller_mobile_money), ''), 'DESTINATION À CONFIGURER'),
-                   SUM(i.line_total_cfa)::integer
-            FROM store_order_items i
-            JOIN store_products p ON p.slug = i.product_slug
-            JOIN store_orders o ON o.id = i.order_id
-            WHERE i.order_id = @orderId
-              AND o.payment_status = 'confirmed'
-              AND p.seller_mobile_money IS NOT NULL
-              AND btrim(p.seller_mobile_money) <> ''
-            GROUP BY i.order_id, p.seller_name, p.seller_mobile_money
-            ON CONFLICT (order_id, seller_name, destination) DO NOTHING
-            """;
-        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
-        await using var command = new NpgsqlCommand(sql, connection);
-        command.Parameters.AddWithValue("orderId", orderId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    public async Task<bool> FailSasPayOrderAndRestoreStockAsync(
+    public async Task<bool> FailFapshiOrderAndRestoreStockAsync(
         Guid orderId,
         CancellationToken cancellationToken)
     {
@@ -152,9 +128,9 @@ public sealed class StoreService(
             UPDATE store_orders
             SET payment_status = 'failed', updated_at = now()
             WHERE id = @orderId
-              AND payment_method = 'saspay'
+              AND payment_method = 'fapshi'
               AND payment_status = 'pending'
-              AND saspay_checkout_session_id IS NULL
+              AND fapshi_trans_id IS NULL
             """;
         await using var updateOrder = new NpgsqlCommand(updateOrderSql, connection, transaction);
         updateOrder.Parameters.AddWithValue("orderId", orderId);
@@ -180,75 +156,67 @@ public sealed class StoreService(
         return true;
     }
 
-    public async Task<bool> UpdateSasPayPaymentStatusAsync(
+    public async Task<FapshiPaymentUpdateResult> UpdateFapshiPaymentStatusAsync(
         Guid orderId,
-        string paymentId,
+        string transId,
         string status,
-        decimal amount,
-        string currency,
+        int amount,
+        OwnerPayoutReservation? ownerPayout,
         CancellationToken cancellationToken)
     {
-        if (status is not ("confirmed" or "failed") ||
-            string.IsNullOrWhiteSpace(paymentId) ||
-            amount != decimal.Truncate(amount) ||
-            amount is < 1 or > int.MaxValue ||
-            !string.Equals(currency, "XAF", StringComparison.Ordinal))
+        if (status is not ("confirmed" or "failed") || string.IsNullOrWhiteSpace(transId) || amount < 1)
         {
-            return false;
+            return FapshiPaymentUpdateResult.Rejected;
         }
 
         await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         const string readSql = """
-            SELECT payment_status, total_cfa, saspay_payment_id
+            SELECT payment_status, total_cfa
             FROM store_orders
             WHERE id = @orderId
-              AND payment_method = 'saspay'
-              AND saspay_checkout_session_id IS NOT NULL
+              AND payment_method = 'fapshi'
+              AND fapshi_trans_id = @transId
             FOR UPDATE
             """;
         await using var readOrder = new NpgsqlCommand(readSql, connection, transaction);
         readOrder.Parameters.AddWithValue("orderId", orderId);
+        readOrder.Parameters.AddWithValue("transId", transId);
         string currentStatus;
-        string? confirmedPaymentId;
         await using (var reader = await readOrder.ExecuteReaderAsync(cancellationToken))
         {
-            if (!await reader.ReadAsync(cancellationToken) || reader.GetInt32(1) != decimal.ToInt32(amount))
+            if (!await reader.ReadAsync(cancellationToken) || reader.GetInt32(1) != amount)
             {
                 await reader.DisposeAsync();
                 await transaction.RollbackAsync(cancellationToken);
-                return false;
+                return FapshiPaymentUpdateResult.Rejected;
             }
 
             currentStatus = reader.GetString(0);
-            confirmedPaymentId = reader.IsDBNull(2) ? null : reader.GetString(2);
         }
 
         // Idempotent replays, and a late "failed" event never downgrades a paid order.
         if (currentStatus == status || currentStatus == "confirmed")
         {
             await transaction.RollbackAsync(cancellationToken);
-            return currentStatus == status &&
-                (status != "confirmed" || confirmedPaymentId is null || confirmedPaymentId == paymentId);
+            return FapshiPaymentUpdateResult.AlreadyProcessed;
         }
 
         if (currentStatus is not ("pending" or "failed"))
         {
             await transaction.RollbackAsync(cancellationToken);
-            return false;
+            return FapshiPaymentUpdateResult.Rejected;
         }
 
         const string updateSql = """
             UPDATE store_orders
             SET payment_status = @status,
-                saspay_payment_id = CASE WHEN @status = 'confirmed' THEN @paymentId ELSE saspay_payment_id END,
                 updated_at = now()
             WHERE id = @orderId
             """;
         await using var updateOrder = new NpgsqlCommand(updateSql, connection, transaction);
         updateOrder.Parameters.AddWithValue("orderId", orderId);
         updateOrder.Parameters.AddWithValue("status", status);
-        updateOrder.Parameters.AddWithValue("paymentId", paymentId);
         await updateOrder.ExecuteNonQueryAsync(cancellationToken);
 
         if (status == "failed")
@@ -274,11 +242,206 @@ public sealed class StoreService(
             await reserveAgain.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        if (status == "confirmed" && ownerPayout is not null)
+        {
+            var phoneNumber = ownerPayout.PhoneNumber?.Trim();
+            var canSubmit = ownerPayout.Enabled &&
+                ownerPayout.ConfigurationComplete &&
+                ownerPayout.AmountCfa is >= 100 and <= 500_000 &&
+                !string.IsNullOrWhiteSpace(phoneNumber);
+            var payoutStatus = !ownerPayout.Enabled
+                ? "disabled"
+                : canSubmit ? "queued" : "manual_review";
+            var details = ownerPayout.Enabled && !canSubmit
+                ? "Montant ou configuration du décaissement à vérifier."
+                : null;
+
+            const string insertPayoutSql = """
+                INSERT INTO store_owner_payouts (
+                    order_id, amount_cfa, destination, external_id, user_id, base_url, status, details
+                )
+                VALUES (
+                    @orderId, @amount, @destination, @externalId, @userId, @baseUrl, @status, @details
+                )
+                ON CONFLICT (order_id) DO NOTHING
+                """;
+            await using var insertPayout = new NpgsqlCommand(insertPayoutSql, connection, transaction);
+            insertPayout.Parameters.AddWithValue("orderId", orderId);
+            insertPayout.Parameters.AddWithValue(
+                "amount",
+                ownerPayout.AmountCfa is null ? DBNull.Value : ownerPayout.AmountCfa.Value);
+            insertPayout.Parameters.AddWithValue(
+                "destination",
+                string.IsNullOrWhiteSpace(phoneNumber) ? DBNull.Value : phoneNumber);
+            insertPayout.Parameters.AddWithValue("externalId", orderId.ToString("D"));
+            insertPayout.Parameters.AddWithValue("userId", $"store-{orderId:N}");
+            insertPayout.Parameters.AddWithValue("baseUrl", ownerPayout.BaseUrl);
+            insertPayout.Parameters.AddWithValue("status", payoutStatus);
+            insertPayout.Parameters.AddWithValue(
+                "details",
+                details is null ? DBNull.Value : details);
+            await insertPayout.ExecuteNonQueryAsync(cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
-        return true;
+        return FapshiPaymentUpdateResult.Updated;
     }
 
-    public async Task<int> ExpireStaleSasPayOrdersAsync(TimeSpan maxAge, CancellationToken cancellationToken)
+    public async Task<OwnerPayout?> TryStartOwnerPayoutAsync(
+        Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE store_owner_payouts
+            SET status = 'submitting', updated_at = now()
+            WHERE order_id = @orderId
+              AND status = 'queued'
+            RETURNING order_id, amount_cfa, destination, external_id, user_id, base_url
+            """;
+
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("orderId", orderId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new OwnerPayout(
+            reader.GetGuid(0),
+            reader.GetInt32(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5));
+    }
+
+    public async Task<OwnerPayout?> TryStartNextOwnerPayoutAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            WITH next_payout AS (
+                SELECT order_id
+                FROM store_owner_payouts
+                WHERE status = 'queued'
+                ORDER BY created_at
+                FOR UPDATE SKIP LOCKED
+                LIMIT 1
+            )
+            UPDATE store_owner_payouts p
+            SET status = 'submitting', updated_at = now()
+            FROM next_payout
+            WHERE p.order_id = next_payout.order_id
+            RETURNING p.order_id, p.amount_cfa, p.destination, p.external_id, p.user_id, p.base_url
+            """;
+
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        return new OwnerPayout(
+            reader.GetGuid(0),
+            reader.GetInt32(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            reader.GetString(4),
+            reader.GetString(5));
+    }
+
+    public async Task<int> FlagStaleOwnerPayoutsAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            UPDATE store_owner_payouts
+            SET status = 'manual_review',
+                details = 'Tentative interrompue; vérifier Fapshi avant toute nouvelle tentative.',
+                updated_at = now()
+            WHERE status = 'submitting'
+              AND updated_at < now() - interval '5 minutes'
+            """;
+
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        return await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<bool> CompleteOwnerPayoutSubmissionAsync(
+        Guid orderId,
+        string status,
+        string? transId,
+        string? details,
+        CancellationToken cancellationToken)
+    {
+        if (status is not ("submitted" or "manual_review") ||
+            status == "submitted" && string.IsNullOrWhiteSpace(transId))
+        {
+            return false;
+        }
+
+        const string sql = """
+            UPDATE store_owner_payouts
+            SET status = CASE WHEN status = 'submitting' THEN @status ELSE status END,
+                fapshi_trans_id = COALESCE(fapshi_trans_id, @transId),
+                details = CASE WHEN status = 'submitting' THEN @details ELSE details END,
+                updated_at = now()
+            WHERE order_id = @orderId
+              AND (
+                  status = 'submitting'
+                  OR status IN ('successful', 'failed')
+                    AND (@transId IS NULL OR fapshi_trans_id = @transId)
+              )
+            """;
+
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("orderId", orderId);
+        command.Parameters.AddWithValue("status", status);
+        command.Parameters.AddWithValue("transId", string.IsNullOrWhiteSpace(transId) ? DBNull.Value : transId);
+        command.Parameters.AddWithValue("details", string.IsNullOrWhiteSpace(details) ? DBNull.Value : details);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task<bool> UpdateOwnerPayoutStatusAsync(
+        Guid orderId,
+        string transId,
+        int amount,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        if (status is not ("successful" or "failed") ||
+            string.IsNullOrWhiteSpace(transId) ||
+            amount < 1)
+        {
+            return false;
+        }
+
+        const string sql = """
+            UPDATE store_owner_payouts
+            SET status = @status,
+                fapshi_trans_id = @transId,
+                details = NULL,
+                updated_at = now()
+            WHERE order_id = @orderId
+              AND external_id = @externalId
+              AND amount_cfa = @amount
+              AND (fapshi_trans_id IS NULL OR fapshi_trans_id = @transId)
+              AND status IN ('submitting', 'submitted', 'manual_review')
+            """;
+
+        await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("orderId", orderId);
+        command.Parameters.AddWithValue("externalId", orderId.ToString("D"));
+        command.Parameters.AddWithValue("amount", amount);
+        command.Parameters.AddWithValue("status", status);
+        command.Parameters.AddWithValue("transId", transId);
+        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+    }
+
+    public async Task<int> ExpireStaleFapshiOrdersAsync(TimeSpan maxAge, CancellationToken cancellationToken)
     {
         await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -287,7 +450,7 @@ public sealed class StoreService(
             SET payment_status = 'failed', updated_at = now()
             WHERE id IN (
                 SELECT id FROM store_orders
-                WHERE payment_method = 'saspay'
+                WHERE payment_method = 'fapshi'
                   AND payment_status = 'pending'
                   AND created_at < now() - @maxAge
                 ORDER BY created_at
