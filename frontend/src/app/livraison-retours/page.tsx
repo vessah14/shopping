@@ -4,12 +4,12 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import SiteFooter from "../../components/layout/SiteFooter";
 import SiteHeader from "../../components/layout/SiteHeader";
-import { whatsappUrl } from "../../data/contact";
+import { storeAddress, storeMapUrl, whatsappUrl } from "../../data/contact";
 import { formatCfa, getDeliveryZones } from "../../lib/delivery-zones";
 
 export const metadata: Metadata = {
   title: "Livraison et retours",
-  description: "Consultez les zones et frais de livraison d’Espace Shopping Plus et contactez la boutique pour une demande de retour ou d’échange.",
+  description: "Retrait gratuit en boutique à Douala, informations de livraison et demandes de retour ou d’échange.",
 };
 
 export default async function DeliveryAndReturnsPage() {
@@ -28,9 +28,14 @@ async function DeliveryAndReturnsContent() {
           <p className="eyebrow">INFORMATIONS PRATIQUES</p>
           <h1>Livraison et retours</h1>
           <p className="delivery-page-intro">
-            Les frais et délais affichés ci-dessous sont repris dans le récapitulatif de votre panier avant paiement.
-            Le montant de la livraison est inclus dans le total payé en ligne.
+            Si une zone de livraison est disponible, ses frais et délais sont affichés dans le panier avant paiement et les frais s’ajoutent au total.
           </p>
+
+          <section aria-labelledby="pickup-title">
+            <h2 id="pickup-title">Retrait en boutique</h2>
+            <p>Le retrait en boutique est gratuit. Choisissez cette option au moment du paiement en ligne.</p>
+            <p><a className="delivery-pickup-map" href={storeMapUrl} target="_blank" rel="noopener noreferrer">{storeAddress} · Voir sur la carte ↗</a></p>
+          </section>
 
           <section aria-labelledby="delivery-zones-title">
             <h2 id="delivery-zones-title">Zones de livraison</h2>
@@ -45,7 +50,10 @@ async function DeliveryAndReturnsContent() {
                 ))}
               </ul>
             ) : (
-              <p>Les zones de livraison ne sont pas disponibles pour le moment. Contactez la boutique pour connaître les modalités.</p>
+              <p>
+                La livraison en ligne n’est pas encore configurée. Pour organiser une livraison,{" "}
+                <a className="delivery-pickup-map" href={`${whatsappUrl}?text=${encodeURIComponent("Bonjour Espace Shopping Plus, je souhaite organiser une livraison.")}`} target="_blank" rel="noopener noreferrer">contactez la boutique sur WhatsApp</a>.
+              </p>
             )}
           </section>
 

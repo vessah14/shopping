@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { productImage, type Product } from "../../data/store";
 import SiteHeader from "../layout/SiteHeader";
@@ -33,11 +33,11 @@ function OptionPicker({ label, options, value, onChange, missing }: { label: str
 export default function ProductDetail({ product, relatedProducts = [] }: { product: Product; relatedProducts?: Product[] }) {
   const images = product.images?.length ? product.images : [product.image];
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const selectedImage = images[selectedImageIndex] ?? images[0];
+  const activeImageIndex = Math.min(selectedImageIndex, images.length - 1);
+  const selectedImage = images[activeImageIndex] ?? images[0];
   const [size, setSize] = useState(product.sizes.length === 1 ? product.sizes[0] : "");
   const [color, setColor] = useState(product.colors.length === 1 ? product.colors[0] : "");
   const [showMissing, setShowMissing] = useState(false);
-  const zoomDialog = useRef<HTMLDialogElement>(null);
   const { addItem, items } = useCart();
   const isAvailable = product.isAvailable !== false && (product.stockQuantity === undefined || product.stockQuantity > 0);
   const cartQuantity = productQuantity(items, product.slug);
@@ -56,6 +56,14 @@ export default function ProductDetail({ product, relatedProducts = [] }: { produ
     addItem(product.slug, { size, color, name: product.name });
   }
 
+  function showPreviousImage() {
+    setSelectedImageIndex((index) => (Math.min(index, images.length - 1) - 1 + images.length) % images.length);
+  }
+
+  function showNextImage() {
+    setSelectedImageIndex((index) => (Math.min(index, images.length - 1) + 1) % images.length);
+  }
+
   const selection = [size && `taille ${size}`, color && `couleur ${color}`].filter(Boolean).join(", ");
   const whatsappMessage = encodeURIComponent(`Bonjour Espace Shopping Plus, je souhaite avoir des informations sur ${product.name} (${product.price})${selection ? ` en ${selection}` : ""}. Est-il disponible ?`);
   const whatsappHref = `${whatsappUrl}?text=${whatsappMessage}`;
@@ -67,27 +75,35 @@ export default function ProductDetail({ product, relatedProducts = [] }: { produ
         <nav className="product-breadcrumb" aria-label="Fil d’Ariane"><Link href="/">Accueil</Link><span>/</span><Link href="/boutique">Boutique</Link><span>/</span><Link href={`/boutique?categorie=${encodeURIComponent(product.category)}`}>{product.category}</Link><span>/</span><span>{product.name}</span></nav>
         <div className="product-detail">
           <div className="product-detail-gallery">
-            <button type="button" className="product-detail-zoom" onClick={() => zoomDialog.current?.showModal()} aria-label={`Agrandir la photo de ${product.name}`}>
-              <StoreImage className="product-detail-image" src={productImage(selectedImage, 1500)} alt={product.name} sizes="(max-width: 700px) 90vw, 55vw" />
-              <span className="product-detail-zoom-hint" aria-hidden="true">⤢ Agrandir</span>
-            </button>
-            {images.length > 1 && <div className="product-detail-thumbnails" aria-label="Autres photos du produit">
+            <div className="product-detail-viewer" role="region" aria-label={`Galerie photo de ${product.name}`}>
+              <StoreImage
+                className="product-detail-image"
+                src={productImage(selectedImage, 1500)}
+                alt={images.length > 1 ? `${product.name}, photo ${activeImageIndex + 1} sur ${images.length}` : product.name}
+                sizes="(max-width: 700px) 90vw, 55vw"
+              />
+              {images.length > 1 && <>
+                <button className="product-detail-carousel-control product-detail-carousel-previous" type="button" onClick={showPreviousImage} aria-label="Photo précédente">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6" /></svg>
+                </button>
+                <button className="product-detail-carousel-control product-detail-carousel-next" type="button" onClick={showNextImage} aria-label="Photo suivante">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
+                </button>
+                <span className="product-detail-image-count" aria-live="polite">{activeImageIndex + 1} / {images.length}</span>
+              </>}
+            </div>
+            {images.length > 1 && <div className="product-detail-thumbnails" role="group" aria-label={`Choisir une photo de ${product.name}`}>
               {images.map((image, index) => <button
-                className={`product-detail-thumbnail${selectedImageIndex === index ? " is-selected" : ""}`}
+                className={`product-detail-thumbnail${activeImageIndex === index ? " is-selected" : ""}`}
                 type="button"
                 key={`${image}-${index}`}
                 onClick={() => setSelectedImageIndex(index)}
                 aria-label={`Afficher la photo ${index + 1} de ${product.name}`}
-                aria-pressed={selectedImageIndex === index}
+                aria-pressed={activeImageIndex === index}
               >
                 <StoreImage className="product-detail-thumbnail-image" src={productImage(image, 240)} alt="" sizes="84px" />
               </button>)}
             </div>}
-            <dialog ref={zoomDialog} className="product-zoom-dialog" aria-label={`Photo agrandie de ${product.name}`} onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
-              {/* eslint-disable-next-line @next/next/no-img-element -- full-size image shown on demand */}
-              <img src={productImage(selectedImage, 2000)} alt={product.name} />
-              <button type="button" className="product-zoom-close" onClick={() => zoomDialog.current?.close()} aria-label="Fermer la photo agrandie">×</button>
-            </dialog>
           </div>
           <div className="product-detail-copy">
             <p className="eyebrow">{product.category}</p>

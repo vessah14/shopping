@@ -277,9 +277,18 @@ public sealed partial class StoreController(
             return false;
         }
 
-        if (request.DeliveryZoneId is not > 0)
+        var fulfillmentMethod = request.FulfillmentMethod?.Trim() ?? "delivery";
+        var isPickup = string.Equals(fulfillmentMethod, "pickup", StringComparison.OrdinalIgnoreCase);
+        if (!isPickup && !string.Equals(fulfillmentMethod, "delivery", StringComparison.OrdinalIgnoreCase))
         {
-            error = "Choisissez une zone de livraison.";
+            error = "Choisissez un mode de réception valide.";
+            return false;
+        }
+
+        if ((isPickup && request.DeliveryZoneId is not null) ||
+            (!isPickup && request.DeliveryZoneId is not > 0))
+        {
+            error = isPickup ? "Le retrait en boutique ne doit pas inclure une zone de livraison." : "Choisissez une zone de livraison.";
             return false;
         }
 

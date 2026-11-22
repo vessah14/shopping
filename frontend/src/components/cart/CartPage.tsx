@@ -5,7 +5,7 @@ import SiteHeader from "../layout/SiteHeader";
 import SiteFooter from "../layout/SiteFooter";
 import StoreImage from "../ui/StoreImage";
 import { productImage, type Product } from "../../data/store";
-import { whatsappUrl } from "../../data/contact";
+import { storeAddress, storeMapUrl, whatsappUrl } from "../../data/contact";
 import { lineKey, productQuantity, useCart } from "./cartStore";
 import { useState, type FormEvent } from "react";
 import { authClient } from "../../lib/auth-client";
@@ -29,7 +29,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [zoneId, setZoneId] = useState(deliveryZones.length === 1 ? String(deliveryZones[0].id) : "");
+  const [zoneId, setZoneId] = useState(deliveryZones.length === 0 ? "pickup" : deliveryZones.length === 1 ? String(deliveryZones[0].id) : "");
   const [city, setCity] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryNotes, setDeliveryNotes] = useState("");
@@ -41,7 +41,9 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
     .filter((line): line is typeof line & { product: Product } => Boolean(line.product));
   const missingLines = items.filter((line) => !products.some((product) => product.slug === line.slug));
   const subtotal = cartProducts.reduce((sum, line) => sum + numericPrice(line.product.price) * line.quantity, 0);
+  const isPickup = zoneId === "pickup";
   const zone = deliveryZones.find((candidate) => String(candidate.id) === zoneId);
+  const hasFulfillment = isPickup || Boolean(zone);
   const total = subtotal + (zone?.feeCfa ?? 0);
   const validItemCount = cartProducts.reduce((count, line) => count + line.quantity, 0);
   const lineProblem = (line: (typeof cartProducts)[number]) => {
@@ -74,8 +76,8 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
   async function submitOrder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setCheckoutError("");
-    if (!zone) {
-      setCheckoutError("Choisissez votre zone de livraison.");
+    if (!isPickup && !zone) {
+      setCheckoutError("Choisissez votre mode de réception.");
       return;
     }
     setIsCheckingOut(true);
@@ -89,10 +91,11 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
           customerName,
           customerEmail,
           phone,
-          city,
-          deliveryAddress,
-          deliveryNotes,
-          deliveryZoneId: zone.id,
+          fulfillmentMethod: isPickup ? "pickup" : "delivery",
+          city: isPickup ? "Douala" : city,
+          deliveryAddress: isPickup ? "Retrait en boutique" : deliveryAddress,
+          deliveryNotes: isPickup ? "" : deliveryNotes,
+          deliveryZoneId: isPickup ? null : zone?.id,
           paymentMethod: "fapshi",
         }),
       });
@@ -191,15 +194,16 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
             <aside className="cart-summary" aria-labelledby="cart-summary-title">
               <h2 id="cart-summary-title">Récapitulatif</h2>
               <div><span>Sous-total ({validItemCount} article{validItemCount === 1 ? "" : "s"})</span><strong>{formatPrice(subtotal)}</strong></div>
-              <div><span>Livraison{zone ? ` — ${zone.name}` : ""}</span><span>{zone ? (zone.feeCfa ? formatPrice(zone.feeCfa) : "Gratuite") : "Choisissez votre zone"}</span></div>
-              <div className="cart-summary-total"><span>{zone ? "Total à payer" : "Total produits"}</span><strong>{formatPrice(total)}</strong></div>
+              <div>
+                <span>{isPickup ? "Retrait en boutique" : `Livraison${zone ? ` — ${zone.name}` : ""}`}</span>
+                <span>{isPickup ? "Gratuit" : zone ? (zone.feeCfa ? formatPrice(zone.feeCfa) : "Gratuite") : "Choisissez votre mode"}</span>
+              </div>
+              <div className="cart-summary-total"><span>{hasFulfillment ? "Total à payer" : "Total produits"}</span><strong>{formatPrice(total)}</strong></div>
 
               {!cartAvailable ? (
                 <p className="checkout-unavailable">Ajustez votre panier avant de commander.</p>
               ) : isStaff ? (
                 <p role="alert">Connectez-vous avec un compte client ou déconnectez-vous pour passer commande.</p>
-              ) : deliveryZones.length === 0 ? (
-                <p className="checkout-unavailable">Les tarifs de livraison ne sont pas encore disponibles. Contactez-nous pour finaliser votre commande.</p>
               ) : (
                 <form className="checkout-form" onSubmit={submitOrder}>
                   {!sessionPending && !session && <>
@@ -218,26 +222,33 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
                     <input type="email" name="email" autoComplete="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} maxLength={254} />
                   </label>}
                   <label>
-                    Zone de livraison
-                    <select name="deliveryZone" value={zoneId} onChange={(event) => setZoneId(event.target.value)} required>
-                      <option value="">Choisissez votre zone…</option>
+                    Mode de réception
+                    <select name="fulfillmentMethod" value={zoneId} onChange={(event) => setZoneId(event.target.value)} required>
+                      {deliveryZones.length > 0 && <option value="">Choisissez votre mode…</option>}
+                      <option value="pickup">Retrait gratuit à la boutique</option>
                       {deliveryZones.map((candidate) => <option value={candidate.id} key={candidate.id}>
-                        {candidate.name} — {candidate.feeCfa ? formatPrice(candidate.feeCfa) : "gratuite"}{candidate.delay ? ` (${candidate.delay})` : ""}
+                        Livraison — {candidate.name} — {candidate.feeCfa ? formatPrice(candidate.feeCfa) : "gratuite"}{candidate.delay ? ` (${candidate.delay})` : ""}
                       </option>)}
                     </select>
                   </label>
-                  <label>
-                    Ville / quartier
-                    <input name="city" autoComplete="address-level2" value={city} onChange={(event) => setCity(event.target.value)} required minLength={2} maxLength={100} />
-                  </label>
-                  <label>
-                    Adresse de livraison
-                    <textarea name="deliveryAddress" autoComplete="street-address" placeholder="Rue, repère, immeuble…" value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} required minLength={8} maxLength={300} rows={3} />
-                  </label>
-                  <label>
-                    Instructions de livraison <span>(facultatif)</span>
-                    <textarea name="deliveryNotes" value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} maxLength={500} rows={2} />
-                  </label>
+                  {isPickup ? (
+                    <p className="checkout-pickup-note">
+                      Retrait gratuit à la boutique : <a href={storeMapUrl} target="_blank" rel="noopener noreferrer">{storeAddress}</a>.
+                    </p>
+                  ) : <>
+                    <label>
+                      Ville / quartier
+                      <input name="city" autoComplete="address-level2" value={city} onChange={(event) => setCity(event.target.value)} required minLength={2} maxLength={100} />
+                    </label>
+                    <label>
+                      Adresse de livraison
+                      <textarea name="deliveryAddress" autoComplete="street-address" placeholder="Rue, repère, immeuble…" value={deliveryAddress} onChange={(event) => setDeliveryAddress(event.target.value)} required minLength={8} maxLength={300} rows={3} />
+                    </label>
+                    <label>
+                      Instructions de livraison <span>(facultatif)</span>
+                      <textarea name="deliveryNotes" value={deliveryNotes} onChange={(event) => setDeliveryNotes(event.target.value)} maxLength={500} rows={2} />
+                    </label>
+                  </>}
                   {checkoutError && <p className="checkout-unavailable" role="alert">{checkoutError}</p>}
                   <button className="cart-contact-button cart-pay-button" type="submit" disabled={isCheckingOut || sessionPending}>
                     {isCheckingOut ? "Préparation du paiement…" : `Payer par Mobile Money · ${formatPrice(total)}`}
@@ -251,7 +262,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
                 </form>
               )}
               <a className="cart-whatsapp-link" href={deliveryZones.length === 0 ? whatsappOrderUrl : whatsappHelpUrl} target="_blank" rel="noopener noreferrer">
-                {deliveryZones.length === 0 ? "Commander par WhatsApp" : "Une question ?"} <span aria-hidden="true">↗</span>
+                {deliveryZones.length === 0 ? "Livraison sur WhatsApp" : "Une question ?"} <span aria-hidden="true">↗</span>
               </a>
               <p className="cart-summary-note"><Link href="/livraison-retours">Consulter les informations de livraison et de retour</Link></p>
             </aside>

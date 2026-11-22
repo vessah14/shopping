@@ -36,6 +36,7 @@ public sealed class CreateOrderRequestDto
     public string? City { get; init; }
     public string? DeliveryAddress { get; init; }
     public string? DeliveryNotes { get; init; }
+    public string? FulfillmentMethod { get; init; }
     public long? DeliveryZoneId { get; init; }
     public string? PaymentMethod { get; init; }
     public string? CustomerName { get; init; }

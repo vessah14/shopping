@@ -528,7 +528,12 @@ public sealed class StoreService(
         await using var connection = await GetDataSource().OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var zone = await ReadDeliveryZoneAsync(connection, transaction, request.DeliveryZoneId!.Value, cancellationToken);
+        var isPickup = string.Equals(request.FulfillmentMethod?.Trim(), "pickup", StringComparison.OrdinalIgnoreCase);
+        var zone = isPickup
+            ? new DeliveryZoneDto(0, "Retrait en boutique", 0, string.Empty)
+            : request.DeliveryZoneId is > 0
+                ? await ReadDeliveryZoneAsync(connection, transaction, request.DeliveryZoneId.Value, cancellationToken)
+                : null;
         if (zone is null)
         {
             return new CreateOrderResult(
@@ -602,6 +607,7 @@ public sealed class StoreService(
             customerName,
             customerEmail,
             request,
+            isPickup,
             (int)subtotal,
             zone,
             OrderAccessToken.Hash(accessToken),
@@ -779,6 +785,7 @@ public sealed class StoreService(
         string customerName,
         string customerEmail,
         CreateOrderRequestDto request,
+        bool isPickup,
         int subtotal,
         DeliveryZoneDto zone,
         string accessTokenHash,
@@ -799,9 +806,9 @@ public sealed class StoreService(
         command.Parameters.AddWithValue("customerName", customerName);
         command.Parameters.AddWithValue("customerEmail", customerEmail);
         command.Parameters.AddWithValue("phone", request.Phone!.Trim());
-        command.Parameters.AddWithValue("city", request.City!.Trim());
-        command.Parameters.AddWithValue("deliveryAddress", request.DeliveryAddress!.Trim());
-        command.Parameters.AddWithValue("deliveryNotes", request.DeliveryNotes?.Trim() ?? string.Empty);
+        command.Parameters.AddWithValue("city", isPickup ? "Douala" : request.City!.Trim());
+        command.Parameters.AddWithValue("deliveryAddress", isPickup ? "Retrait en boutique" : request.DeliveryAddress!.Trim());
+        command.Parameters.AddWithValue("deliveryNotes", isPickup ? string.Empty : request.DeliveryNotes?.Trim() ?? string.Empty);
         command.Parameters.AddWithValue("paymentMethod", request.PaymentMethod!);
         command.Parameters.AddWithValue("subtotal", subtotal);
         command.Parameters.AddWithValue("deliveryZone", zone.Name);
