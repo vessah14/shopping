@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS store_products (
   description text NOT NULL,
   sizes jsonb NOT NULL DEFAULT '[]'::jsonb,
   colors jsonb NOT NULL DEFAULT '[]'::jsonb,
+  product_type text NOT NULL DEFAULT 'single_piece' CHECK (product_type IN ('single_piece', 'set')),
   stock_quantity integer NOT NULL DEFAULT 0 CHECK (stock_quantity >= 0),
   is_available boolean NOT NULL DEFAULT false,
   is_promo boolean NOT NULL DEFAULT false,
@@ -32,6 +33,7 @@ ALTER TABLE store_products ADD COLUMN IF NOT EXISTS original_price_cfa integer;
 ALTER TABLE store_products ADD COLUMN IF NOT EXISTS images jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE store_products ADD COLUMN IF NOT EXISTS seller_name text NOT NULL DEFAULT 'Espace Shopping Plus';
 ALTER TABLE store_products ADD COLUMN IF NOT EXISTS seller_mobile_money text;
+ALTER TABLE store_products ADD COLUMN IF NOT EXISTS product_type text NOT NULL DEFAULT 'single_piece' CHECK (product_type IN ('single_piece', 'set'));
 UPDATE store_products SET images = jsonb_build_array(image) WHERE images = '[]'::jsonb;
 
 CREATE TABLE IF NOT EXISTS store_orders (

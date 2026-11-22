@@ -4,6 +4,11 @@ import { getSuperadminAccess } from "@/lib/superadmin-access";
 import { getSuperadminOverview } from "@/lib/superadmin-data";
 
 type JsonRecord = Record<string, unknown>;
+type ProductType = "single_piece" | "set";
+
+function isProductType(value: unknown): value is ProductType {
+  return value === "single_piece" || value === "set";
+}
 
 const orderStatuses = ["pending", "confirmed", "preparing", "shipped", "delivered", "cancelled"] as const;
 const paymentStatuses = ["pending", "confirmed", "failed", "refunded"] as const;
@@ -75,7 +80,7 @@ export async function GET(request: NextRequest) {
 
   if (section === "products") {
     const result = await pool.query(
-      `SELECT slug, name, price_cfa AS "priceCfa", original_price_cfa AS "originalPriceCfa", image, images, category, description, sizes, colors,
+      `SELECT slug, name, price_cfa AS "priceCfa", original_price_cfa AS "originalPriceCfa", image, images, category, description, sizes, colors, product_type AS "productType",
               seller_name AS "sellerName", seller_mobile_money AS "sellerMobileMoney",
               stock_quantity AS "stockQuantity", is_available AS "isAvailable", is_active AS active, is_promo AS "isPromo"
        FROM store_products ORDER BY updated_at DESC, name`,
@@ -205,9 +210,10 @@ export async function POST(request: NextRequest) {
     const stockQuantity = readInteger(body, "stockQuantity", 0, 1_000_000);
     const sizes = body.sizes === undefined ? [] : readStringArray(body, "sizes");
     const colors = readStringArray(body, "colors");
+    const productType = body.productType === undefined ? "single_piece" : body.productType;
     const sellerName = readString(body, "sellerName", 140);
     const sellerMobileMoney = body.sellerMobileMoney === "" ? null : readString(body, "sellerMobileMoney", 40);
-    if (!name || !image || !images || !category || !description || !sellerName || (body.sellerMobileMoney !== "" && sellerMobileMoney === null) || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || typeof body.isPromo !== "boolean") {
+    if (!name || !image || !images || !category || !description || !sellerName || (body.sellerMobileMoney !== "" && sellerMobileMoney === null) || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || !isProductType(productType) || typeof body.isPromo !== "boolean") {
       return NextResponse.json({ error: "Vérifiez les champs du produit et ses images (10 maximum)." }, { status: 400 });
     }
     if (body.isPromo ? originalPriceCfa === null || originalPriceCfa <= priceCfa : originalPriceCfa !== null) return NextResponse.json({ error: "Une promotion exige un ancien prix supérieur au prix actuel. Sans promotion, laissez ce champ vide." }, { status: 400 });
@@ -226,10 +232,10 @@ export async function POST(request: NextRequest) {
     const isAvailable = body.isAvailable === true && stockQuantity > 0;
     const result = await pool.query(
       `INSERT INTO store_products
-        (slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors, stock_quantity, is_available, is_promo, seller_name, seller_mobile_money)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15)
+        (slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors, product_type, stock_quantity, is_available, is_promo, seller_name, seller_mobile_money)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16)
        RETURNING slug`,
-      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), stockQuantity, isAvailable, body.isPromo, sellerName, sellerMobileMoney],
+      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), productType, stockQuantity, isAvailable, body.isPromo, sellerName, sellerMobileMoney],
     );
     return NextResponse.json({ slug: result.rows[0].slug }, { status: 201 });
   }
@@ -288,9 +294,10 @@ export async function PATCH(request: NextRequest) {
     const stockQuantity = readInteger(body, "stockQuantity", 0, 1_000_000);
     const sizes = body.sizes === undefined ? [] : readStringArray(body, "sizes");
     const colors = readStringArray(body, "colors");
+    const productType = body.productType;
     const sellerName = readString(body, "sellerName", 140);
     const sellerMobileMoney = body.sellerMobileMoney === "" ? null : readString(body, "sellerMobileMoney", 40);
-    if (!slug || !name || !image || !images || !category || !description || !sellerName || (body.sellerMobileMoney !== "" && sellerMobileMoney === null) || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || typeof body.isAvailable !== "boolean" || typeof body.isPromo !== "boolean") {
+    if (!slug || !name || !image || !images || !category || !description || !sellerName || (body.sellerMobileMoney !== "" && sellerMobileMoney === null) || priceCfa === null || (body.originalPriceCfa !== null && originalPriceCfa === null) || stockQuantity === null || !sizes || !colors || !isProductType(productType) || typeof body.isAvailable !== "boolean" || typeof body.isPromo !== "boolean") {
       return NextResponse.json({ error: "Vérifiez les champs du produit et ses images (10 maximum)." }, { status: 400 });
     }
     if (body.isAvailable && stockQuantity === 0) return NextResponse.json({ error: "Ajoutez du stock avant de marquer cet article disponible." }, { status: 400 });
@@ -301,10 +308,10 @@ export async function PATCH(request: NextRequest) {
     if (!activeCategory.rows[0]?.is_active) return NextResponse.json({ error: "Choisissez une catégorie active." }, { status: 400 });
     const result = await pool.query(
       `UPDATE store_products SET name=$2, price_cfa=$3, original_price_cfa=$4, image=$5, images=$6::jsonb, category=$7, description=$8,
-        sizes=$9::jsonb, colors=$10::jsonb, stock_quantity=$11, is_available=$12, is_promo=$13,
-        seller_name=$14, seller_mobile_money=$15, updated_at=now()
+        sizes=$9::jsonb, colors=$10::jsonb, product_type=$11, stock_quantity=$12, is_available=$13, is_promo=$14,
+        seller_name=$15, seller_mobile_money=$16, updated_at=now()
        WHERE slug=$1 RETURNING slug`,
-      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), stockQuantity, body.isAvailable, body.isPromo, sellerName, sellerMobileMoney],
+      [slug, name, priceCfa, originalPriceCfa, image, JSON.stringify(images), category, description, JSON.stringify(sizes), JSON.stringify(colors), productType, stockQuantity, body.isAvailable, body.isPromo, sellerName, sellerMobileMoney],
     );
     if (!result.rowCount) return NextResponse.json({ error: "Produit introuvable." }, { status: 404 });
     return NextResponse.json({ success: true });

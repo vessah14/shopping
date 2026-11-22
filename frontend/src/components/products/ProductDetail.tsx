@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { productImage, type Product } from "../../data/store";
+import { hasColorChoices, hasSizeChoices } from "../../lib/product-options";
 import SiteHeader from "../layout/SiteHeader";
 import SiteFooter from "../layout/SiteFooter";
 import { productQuantity, useCart } from "../cart/cartStore";
@@ -35,16 +36,18 @@ export default function ProductDetail({ product, relatedProducts = [] }: { produ
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const activeImageIndex = Math.min(selectedImageIndex, images.length - 1);
   const selectedImage = images[activeImageIndex] ?? images[0];
+  const canChooseSize = hasSizeChoices(product.sizes);
+  const canChooseColor = hasColorChoices(product.productType, product.colors);
   const [size, setSize] = useState(product.sizes.length === 1 ? product.sizes[0] : "");
-  const [color, setColor] = useState(product.colors.length === 1 ? product.colors[0] : "");
+  const [color, setColor] = useState(product.productType === "set" && product.colors.length === 1 ? product.colors[0] : "");
   const [showMissing, setShowMissing] = useState(false);
   const { addItem, items } = useCart();
   const isAvailable = product.isAvailable !== false && (product.stockQuantity === undefined || product.stockQuantity > 0);
   const cartQuantity = productQuantity(items, product.slug);
   const cartLimit = Math.min(product.stockQuantity ?? 50, 50);
   const isCartLimitReached = cartQuantity >= cartLimit;
-  const missingSize = product.sizes.length > 0 && !size;
-  const missingColor = product.colors.length > 0 && !color;
+  const missingSize = canChooseSize && !size;
+  const missingColor = canChooseColor && !color;
   const lowStock = isAvailable ? stockLabel(product.stockQuantity) : null;
 
   function addToCart() {
@@ -112,9 +115,9 @@ export default function ProductDetail({ product, relatedProducts = [] }: { produ
             <p className="product-detail-price">{product.originalPrice && <del className="product-old-price">{product.originalPrice}</del>}<span>{product.price}</span></p>
             {lowStock && <p className="product-low-stock">{lowStock}</p>}
             <p className="product-detail-description">{product.description}</p>
-            {isAvailable && <div className="product-options">
-              <OptionPicker label="Taille" options={product.sizes} value={size} onChange={(value) => { setSize(value); }} missing={showMissing && missingSize} />
-              <OptionPicker label="Couleur" options={product.colors} value={color} onChange={(value) => { setColor(value); }} missing={showMissing && missingColor} />
+            {isAvailable && (canChooseSize || canChooseColor) && <div className="product-options" id="options">
+              {canChooseSize && <OptionPicker label="Taille" options={product.sizes} value={size} onChange={(value) => { setSize(value); }} missing={showMissing && missingSize} />}
+              {canChooseColor && <OptionPicker label="Couleur" options={product.colors} value={color} onChange={(value) => { setColor(value); }} missing={showMissing && missingColor} />}
             </div>}
             <button className="product-cart-button product-detail-add" type="button" onClick={addToCart} disabled={!isAvailable || isCartLimitReached}>{!isAvailable ? "Indisponible" : isCartLimitReached ? "Limite atteinte" : "Ajouter au panier"}</button>
             {isCartLimitReached && isAvailable && <p className="product-cart-limit" role="status">La quantité maximale disponible est déjà dans votre panier.</p>}

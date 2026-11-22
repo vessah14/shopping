@@ -1,6 +1,9 @@
-﻿export type Product = {
+export type ProductType = "single_piece" | "set";
+
+export type Product = {
   slug: string;
   name: string;
+  productType: ProductType;
   price: string;
   originalPrice?: string;
   image: string;

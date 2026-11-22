@@ -5,14 +5,16 @@ import type { Product } from "../../data/store";
 import { productImage } from "../../data/store";
 import type { CartOptions } from "../cart/cartStore";
 import StoreImage from "../ui/StoreImage";
+import { hasColorChoices, hasSizeChoices } from "../../lib/product-options";
 import { stockLabel } from "./stock";
 
 export default function ProductCard({ product, cartQuantity, onAddToCart }: { product: Product; cartQuantity: number; onAddToCart: (slug: string, options?: CartOptions) => void }) {
   const isAvailable = product.isAvailable !== false && (product.stockQuantity === undefined || product.stockQuantity > 0);
   const cartLimit = Math.min(product.stockQuantity ?? 50, 50);
   const isCartLimitReached = cartQuantity >= cartLimit;
-  // Products sold in several sizes or colours must be configured on their page first.
-  const needsOptions = product.sizes.length > 0 || product.colors.length > 0;
+  const needsSizeChoice = hasSizeChoices(product.sizes);
+  const needsColorChoice = hasColorChoices(product.productType, product.colors);
+  const needsOptions = needsSizeChoice || needsColorChoice;
   const lowStock = isAvailable ? stockLabel(product.stockQuantity) : null;
   const href = `/produit/${product.slug}`;
 
@@ -33,9 +35,16 @@ export default function ProductCard({ product, cartQuantity, onAddToCart }: { pr
         <div className="product-actions">
           {!isAvailable
             ? <button className="product-cart-button" type="button" disabled>Indisponible</button>
+            : isCartLimitReached
+              ? <button className="product-cart-button" type="button" disabled>Limite atteinte</button>
             : needsOptions
-              ? <Link className="product-cart-button" href={href}>Choisir {product.sizes.length ? "la taille" : "la couleur"}</Link>
-              : <button className="product-cart-button" type="button" onClick={() => onAddToCart(product.slug, { name: product.name })} disabled={isCartLimitReached}>{isCartLimitReached ? "Limite atteinte" : "Ajouter au panier"}</button>}
+              ? <Link className="product-cart-button" href={`${href}#options`}>Ajouter au panier</Link>
+              : <button className="product-cart-button" type="button" onClick={() => onAddToCart(product.slug, {
+                  size: product.sizes.length === 1 ? product.sizes[0] : "",
+                  color: product.productType === "set" && product.colors.length === 1 ? product.colors[0] : "",
+                  name: product.name,
+                })}>Ajouter au panier</button>}
+          <Link className="product-view-button" href={href}>Voir les détails</Link>
           {isCartLimitReached && isAvailable && <p className="product-cart-limit" role="status">Quantité maximale disponible déjà dans votre panier.</p>}
         </div>
       </div>

@@ -5,6 +5,7 @@ import SiteHeader from "../layout/SiteHeader";
 import SiteFooter from "../layout/SiteFooter";
 import StoreImage from "../ui/StoreImage";
 import { productImage, type Product } from "../../data/store";
+import { hasColorChoices, hasSizeChoices } from "../../lib/product-options";
 import { storeAddress, storeMapUrl, whatsappUrl } from "../../data/contact";
 import { lineKey, productQuantity, useCart } from "./cartStore";
 import { useState, type FormEvent } from "react";
@@ -19,8 +20,8 @@ function formatPrice(value: number) {
   return `${new Intl.NumberFormat("fr-FR").format(value)} FCFA`;
 }
 
-function lineOptions(line: { size: string; color: string }) {
-  return [line.size && `Taille ${line.size}`, line.color && `Couleur ${line.color}`].filter(Boolean).join(" · ");
+function lineOptions(line: { size: string; color: string }, productType: Product["productType"]) {
+  return [line.size && `Taille ${line.size}`, productType === "set" && line.color && `Couleur ${line.color}`].filter(Boolean).join(" · ");
 }
 
 export default function CartPage({ products, deliveryZones }: { products: Product[]; deliveryZones: DeliveryZone[] }) {
@@ -53,7 +54,19 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
     if (product.stockQuantity !== undefined && inCart > product.stockQuantity) {
       return `Stock limité à ${product.stockQuantity} article${product.stockQuantity === 1 ? "" : "s"}. Réduisez la quantité pour continuer.`;
     }
-    if ((product.sizes.length > 0 && !product.sizes.includes(line.size)) || (product.colors.length > 0 && !product.colors.includes(line.color))) {
+    const invalidSize = product.sizes.length === 0
+      ? Boolean(line.size)
+      : hasSizeChoices(product.sizes)
+        ? !product.sizes.includes(line.size)
+        : Boolean(line.size) && line.size !== product.sizes[0];
+    const invalidColor = product.productType === "set" && (
+      hasColorChoices(product.productType, product.colors)
+        ? !product.colors.includes(line.color)
+        : product.colors.length === 1
+          ? Boolean(line.color) && line.color !== product.colors[0]
+          : Boolean(line.color)
+    );
+    if (invalidSize || invalidColor) {
       return "Choisissez de nouveau la taille ou la couleur de cet article.";
     }
     return null;
@@ -65,7 +78,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
   const whatsappOrderMessage = [
     "Bonjour Espace Shopping Plus, je souhaite commander :",
     ...cartProducts.map((line) => {
-      const options = lineOptions(line);
+      const options = lineOptions(line, line.product.productType);
       return `- ${line.product.name}${options ? ` (${options})` : ""} x${line.quantity}`;
     }),
     `Sous-total : ${formatPrice(subtotal)}`,
@@ -152,7 +165,7 @@ export default function CartPage({ products, deliveryZones }: { products: Produc
               </div>
               {cartProducts.map((line) => {
                 const { key, slug, quantity, product } = line;
-                const options = lineOptions(line);
+                const options = lineOptions(line, line.product.productType);
                 const problem = lineProblem(line);
                 const stockLimit = Math.min(product.stockQuantity ?? 50, 50);
                 return (

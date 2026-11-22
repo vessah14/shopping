@@ -569,10 +569,12 @@ public sealed class StoreService(
             }
         }
 
-        foreach (var ((slug, size, color), _) in lines)
+        var normalizedLines = new Dictionary<(string Slug, string Size, string Color), int>();
+        foreach (var ((slug, size, color), quantity) in lines)
         {
             var product = productsBySlug[slug];
-            if (!IsValidOption(product.Sizes, size))
+            var normalizedSize = NormalizeOption(product.Sizes, size);
+            if (normalizedSize is null)
             {
                 return new CreateOrderResult(
                     StatusCodes.Status400BadRequest,
@@ -580,16 +582,22 @@ public sealed class StoreService(
                     $"Choisissez une taille disponible pour {product.Name}.");
             }
 
-            if (!IsValidOption(product.Colors, color))
+            var normalizedColor = product.ProductType == "set"
+                ? NormalizeOption(product.Colors, color)
+                : string.Empty;
+            if (normalizedColor is null)
             {
                 return new CreateOrderResult(
                     StatusCodes.Status400BadRequest,
                     null,
                     $"Choisissez une couleur disponible pour {product.Name}.");
             }
+
+            var normalizedKey = (slug, normalizedSize, normalizedColor);
+            normalizedLines[normalizedKey] = normalizedLines.GetValueOrDefault(normalizedKey) + quantity;
         }
 
-        var subtotal = lines.Sum(line => (long)productsBySlug[line.Key.Slug].PriceCfa * line.Value);
+        var subtotal = normalizedLines.Sum(line => (long)productsBySlug[line.Key.Slug].PriceCfa * line.Value);
         var total = subtotal + zone.FeeCfa;
         if (total > int.MaxValue)
         {
@@ -613,7 +621,7 @@ public sealed class StoreService(
             OrderAccessToken.Hash(accessToken),
             cancellationToken);
 
-        foreach (var ((slug, size, color), quantity) in lines)
+        foreach (var ((slug, size, color), quantity) in normalizedLines)
         {
             await InsertOrderItemAsync(connection, transaction, orderId, productsBySlug[slug], quantity, size, color, cancellationToken);
         }
@@ -671,8 +679,20 @@ public sealed class StoreService(
         return zones;
     }
 
-    private static bool IsValidOption(string[] options, string value) =>
-        options.Length == 0 ? value.Length == 0 : options.Contains(value, StringComparer.Ordinal);
+    private static string? NormalizeOption(string[] options, string value)
+    {
+        if (options.Length == 0)
+        {
+            return value.Length == 0 ? string.Empty : null;
+        }
+
+        if (options.Length == 1 && value.Length == 0)
+        {
+            return options[0];
+        }
+
+        return options.Contains(value, StringComparer.Ordinal) ? value : null;
+    }
 
     private static async Task<DeliveryZoneDto?> ReadDeliveryZoneAsync(
         NpgsqlConnection connection,
@@ -703,7 +723,7 @@ public sealed class StoreService(
             SELECT p.slug, p.name, p.price_cfa, p.original_price_cfa, p.image, p.images::text, p.category, p.description,
                    p.sizes::text, p.colors::text, p.stock_quantity,
                    (p.is_available AND p.stock_quantity > 0) AS is_available, p.is_active, p.is_promo,
-                   p.seller_name
+                   p.seller_name, p.product_type
             FROM store_products p
             WHERE p.is_active = true
               AND EXISTS (
@@ -738,7 +758,8 @@ public sealed class StoreService(
                 reader.GetBoolean(11),
                 reader.GetBoolean(12),
                 reader.GetBoolean(13),
-                reader.GetString(14)));
+                reader.GetString(14),
+                reader.GetString(15)));
         }
 
         return products;
@@ -751,7 +772,7 @@ public sealed class StoreService(
         CancellationToken cancellationToken)
     {
         const string sql = """
-            SELECT slug, name, price_cfa, stock_quantity, is_available, is_active, sizes::text, colors::text
+            SELECT slug, name, price_cfa, stock_quantity, is_available, is_active, sizes::text, colors::text, product_type
             FROM store_products
             WHERE slug = ANY(@slugs)
             ORDER BY slug
@@ -772,7 +793,8 @@ public sealed class StoreService(
                 reader.GetBoolean(4),
                 reader.GetBoolean(5),
                 JsonSerializer.Deserialize<string[]>(reader.GetString(6)) ?? [],
-                JsonSerializer.Deserialize<string[]>(reader.GetString(7)) ?? []));
+                JsonSerializer.Deserialize<string[]>(reader.GetString(7)) ?? [],
+                reader.GetString(8)));
         }
 
         return products;
@@ -876,5 +898,6 @@ public sealed class StoreService(
         bool IsAvailable,
         bool IsActive,
         string[] Sizes,
-        string[] Colors);
+        string[] Colors,
+        string ProductType);
 }

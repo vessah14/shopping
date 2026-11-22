@@ -15,7 +15,8 @@ public sealed record StoreProductDto(
     bool IsAvailable,
     bool Active,
     bool IsPromo = false,
-    string SellerName = "Espace Shopping Plus");
+    string SellerName = "Espace Shopping Plus",
+    string ProductType = "single_piece");
 
 public sealed record StoreCategoryDto(
     string Name,

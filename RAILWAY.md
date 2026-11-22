@@ -78,6 +78,6 @@ Pour Fapshi, configurez sur le service d’encaissement le webhook `https://<dom
 
 Les décaissements sont désactivés par défaut. Fapshi ne déduplique pas les requêtes de payout : si l’issue d’un appel est incertaine, le système bloque une nouvelle tentative automatique et place le versement en vérification manuelle pour éviter un double paiement. Le service Disbursement doit être alimenté séparément et Live doit être activé par Fapshi avant toute utilisation en production.
 
-Après déploiement des changements de schéma, relancez `npm run db:migrate` dans le contexte du service `frontend` avant de déployer le backend qui écrit dans `store_owner_payouts`.
+Pour tout changement de schéma, exécutez `npm run db:migrate` dans le contexte du service `frontend` avant de déployer les services qui utilisent les nouvelles colonnes ou tables. La colonne `product_type` attribue par défaut « Pièce unique » aux produits existants.
 
 Le volume conserve les images téléversées et les images initiales présentes dans `frontend/public/uploads`. Les fichiers `.env` ne doivent pas être importés comme variables Railway; configurez les valeurs réelles dans l’onglet Variables de chaque service.

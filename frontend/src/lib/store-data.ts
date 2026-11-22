@@ -42,6 +42,7 @@ function isStoreProduct(value: unknown): value is StoreApiProduct {
     typeof value.description === "string" &&
     isStringArray(value.sizes) &&
     isStringArray(value.colors) &&
+    (value.productType === "single_piece" || value.productType === "set") &&
     typeof value.stockQuantity === "number" &&
     typeof value.isAvailable === "boolean" &&
     (value.isPromo === undefined || typeof value.isPromo === "boolean") &&
@@ -77,6 +78,7 @@ function mapProduct(row: {
   description: string;
   sizes: string[];
   colors: string[];
+  product_type: Product["productType"];
   stock_quantity: number;
   is_available: boolean;
   is_promo: boolean;
@@ -93,6 +95,7 @@ function mapProduct(row: {
     description: row.description,
     sizes: row.sizes,
     colors: row.colors,
+    productType: row.product_type,
     stockQuantity: row.stock_quantity,
     isAvailable: row.is_available && row.stock_quantity > 0,
     isPromo: row.is_promo,
@@ -125,7 +128,7 @@ export async function getStoreData() {
   const pool = getDatabasePool();
   const [productResult, categoryResult] = await Promise.all([
     pool.query<Parameters<typeof mapProduct>[0]>(
-      `SELECT slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors,
+      `SELECT slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors, product_type,
               stock_quantity, is_available, is_promo, is_active
        FROM store_products
        WHERE is_active = true
@@ -174,7 +177,7 @@ export async function getStoreProduct(slug: string) {
   }
 
   const result = await getDatabasePool().query<Parameters<typeof mapProduct>[0]>(
-    `SELECT slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors,
+    `SELECT slug, name, price_cfa, original_price_cfa, image, images, category, description, sizes, colors, product_type,
             stock_quantity, is_available, is_promo, is_active
      FROM store_products
      WHERE slug = $1 AND is_active = true
