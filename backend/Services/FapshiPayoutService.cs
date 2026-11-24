@@ -76,8 +76,8 @@ public sealed partial class FapshiPayoutService(
         request.Content = JsonContent.Create(new
         {
             amount = payout.AmountCfa,
-            phone = payout.PhoneNumber,
-            medium = "orange money",
+            // Fapshi expects the 9-digit local number and picks the operator (MTN/Orange) from it when medium is omitted.
+            phone = Regex.Replace(payout.PhoneNumber, @"^\+?237", ""),
             name = string.IsNullOrWhiteSpace(settings.RecipientName) ? null : settings.RecipientName,
             userId = payout.UserId,
             externalId = payout.ExternalId,
