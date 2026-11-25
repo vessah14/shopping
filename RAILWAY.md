@@ -62,7 +62,7 @@ Dans les valeurs ci-dessous, remplacez `Postgres` par le nom exact du service Po
 | `Fapshi__Payout__BaseUrl` | `https://sandbox.fapshi.com` pour les tests; `https://live.fapshi.com` uniquement après activation Live |
 | `Fapshi__Payout__ApiUser` | API User du service **Disbursement**, distinct de celui de l’encaissement |
 | `Fapshi__Payout__ApiKey` | API Key du service **Disbursement**, distincte de celle de l’encaissement |
-| `Fapshi__Payout__PhoneNumber` | Numéro Orange Money du propriétaire au format accepté par Fapshi |
+| `Fapshi__Payout__PhoneNumber` | Numéro Mobile Money (MTN ou Orange) du propriétaire, ex. `6XXXXXXXX` ou `+2376XXXXXXXX`; l’opérateur est détecté par Fapshi. Seules les nouvelles commandes utilisent un numéro modifié |
 | `Fapshi__Payout__RecipientName` | Optionnel, nom du bénéficiaire |
 | `Fapshi__Payout__WebhookSecret` | Secret du webhook configuré sur le service **Disbursement** |
 
