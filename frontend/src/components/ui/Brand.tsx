@@ -16,7 +16,7 @@ export function Brand({ light = false, alternate = false }: { light?: boolean; a
   );
 }
 
-type IconName = "bag" | "search" | "heart" | "arrow" | "truck" | "lock" | "instagram" | "facebook" | "tiktok" | "user" | "shield" | "medal" | "headphones";
+type IconName = "bag" | "search" | "heart" | "arrow" | "truck" | "lock" | "instagram" | "facebook" | "tiktok" | "snapchat" | "user" | "shield" | "medal" | "headphones";
 
 const iconPaths: Record<IconName, ReactNode> = {
   bag: <><path d="M5 8h14l-1 13H6L5 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></>,
@@ -28,6 +28,7 @@ const iconPaths: Record<IconName, ReactNode> = {
   instagram: <><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><path d="M17.5 6.5h.01"/></>,
   facebook: <path d="M14 21v-8h3l.5-4H14V7c0-1.2.4-2 2-2h2V1.4C17.3 1.2 16.3 1 15 1c-3.2 0-5 1.9-5 5.3V9H7v4h3v8z"/>,
   tiktok: <path d="M14 3v11.2a4 4 0 1 1-3.5-4V6.7a8 8 0 1 0 7.5 7.5V8.7c1.3 1 2.8 1.6 4.5 1.7V6.8c-3.2-.2-5.7-1.7-6.8-3.8H14Z"/>,
+  snapchat: <path d="M12 3c3 0 5 2.2 5 5.2v2.3l1.8-.5c.6 0 .8.7.3 1l-2 1.1c.6 1.7 2 3 3.9 3.5-.3.8-1.6 1-2.6 1.2-.2.5-.2 1.2-.6 1.4-.8.2-1.8-.3-3 0-1 .3-1.6 1.3-2.8 1.3s-1.8-1-2.8-1.3c-1.2-.3-2.2.2-3 0-.4-.2-.4-.9-.6-1.4-1-.2-2.3-.4-2.6-1.2 1.9-.5 3.3-1.8 3.9-3.5l-2-1.1c-.5-.3-.3-1 .3-1L7 10.5V8.2C7 5.2 9 3 12 3Z"/>,
   user: <><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></>,
   shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></>,
   medal: <><circle cx="12" cy="8" r="6"/><path d="m8.5 13-2 9 5.5-3 5.5 3-2-9"/><path d="m9.5 8 1.7 1.7L15 6"/></>,
