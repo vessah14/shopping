@@ -1925,3 +1925,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 .account-order-payment.is-failed { background: #f8e1dc; color: #a3321f; }
 .account-order-payment.is-refunded { background: #e7e7ef; color: #4a4a68; }
 .account-order-items li { padding-top: 10px; font-size: 13px; }
+.account-pagination { margin-top: 16px; display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; color: #71645a; }
+.account-pagination button { padding: 7px 12px; border: 1px solid #e7dbce; border-radius: 4px; background: #fffdfa; color: #75442f; font-size: 12px; font-weight: 700; cursor: pointer; }
+.account-pagination button:disabled { opacity: .4; cursor: default; }

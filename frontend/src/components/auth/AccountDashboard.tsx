@@ -23,6 +23,8 @@ const paymentMethodLabels: Record<string, string> = {
   fapshi: "Fapshi",
 };
 
+const ORDERS_PER_PAGE = 5;
+
 export default function AccountDashboard({ name, email, isAdmin }: AccountDashboardProps) {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -31,6 +33,10 @@ export default function AccountDashboard({ name, email, isAdmin }: AccountDashbo
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [ordersMessage, setOrdersMessage] = useState("");
   const [ordersReload, setOrdersReload] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(1, Math.ceil(orders.length / ORDERS_PER_PAGE));
+  const currentPage = Math.min(page, pageCount);
+  const visibleOrders = orders.slice((currentPage - 1) * ORDERS_PER_PAGE, currentPage * ORDERS_PER_PAGE);
 
   useEffect(() => {
     let active = true;
@@ -96,11 +102,16 @@ export default function AccountDashboard({ name, email, isAdmin }: AccountDashbo
             }}>Réessayer</button></div>
             : orders.length === 0
               ? <p>Vos commandes apparaîtront ici.</p>
-              : orders.map((order) => <article className="account-order" key={order.id}>
+              : visibleOrders.map((order) => <article className="account-order" key={order.id}>
                 <div className="account-order-heading"><div><strong>Commande #{order.id.slice(0, 8).toUpperCase()}</strong><span>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(order.createdAt))}</span></div><div><strong>{new Intl.NumberFormat("fr-FR").format(order.subtotalCfa)} FCFA</strong><span>{orderLabels[order.status] ?? order.status}</span></div></div>
                 <p className={`account-order-payment is-${order.paymentStatus}`}>{paymentLabels[order.paymentStatus] ?? order.paymentStatus} · {paymentMethodLabels[order.paymentMethod] ?? order.paymentMethod.replaceAll("_", " ")}</p>
                 <ul className="account-order-items">{order.items.map((item, index) => <li key={`${item.name}-${index}`}><span>{item.name} <b>× {item.quantity}</b></span><strong>{new Intl.NumberFormat("fr-FR").format(item.lineTotalCfa)} FCFA</strong></li>)}</ul>
               </article>)}
+        {!ordersLoading && !ordersMessage && pageCount > 1 && <nav className="account-pagination" aria-label="Pagination des commandes">
+          <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>← Précédent</button>
+          <span>Page {currentPage} sur {pageCount}</span>
+          <button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Suivant →</button>
+        </nav>}
       </section>
       {feedback && <p className="account-status" role="alert">{feedback}</p>}
       <button className="account-submit" type="button" onClick={signOut} disabled={isSigningOut}>
