@@ -678,3 +678,7 @@ body { background: var(--admin-bg); }
 @media (prefers-reduced-motion: reduce) {
   .superadmin-stat, .superadmin-pending { transition: none; }
 }
+
+/* Product name with inline quantity in the orders table */
+.superadmin-table-primary .superadmin-order-items-count { display: inline; font-weight: 600; }
+.superadmin-orders-table td > .superadmin-table-primary + .superadmin-table-primary { margin-top: 4px; }

@@ -97,8 +97,8 @@ export default function AccountDashboard({ name, email, isAdmin }: AccountDashbo
             : orders.length === 0
               ? <p>Vos commandes apparaîtront ici.</p>
               : orders.map((order) => <article className="account-order" key={order.id}>
-                <div className="account-order-heading"><div><strong>Commande {order.id.slice(0, 8).toUpperCase()}</strong><span>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(order.createdAt))}</span></div><div><strong>{new Intl.NumberFormat("fr-FR").format(order.subtotalCfa)} FCFA</strong><span>{orderLabels[order.status] ?? order.status}</span></div></div>
-                <p className="account-order-payment">{paymentLabels[order.paymentStatus] ?? order.paymentStatus} · {paymentMethodLabels[order.paymentMethod] ?? order.paymentMethod.replaceAll("_", " ")}</p>
+                <div className="account-order-heading"><div><strong>Commande #{order.id.slice(0, 8).toUpperCase()}</strong><span>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(order.createdAt))}</span></div><div><strong>{new Intl.NumberFormat("fr-FR").format(order.subtotalCfa)} FCFA</strong><span>{orderLabels[order.status] ?? order.status}</span></div></div>
+                <p className={`account-order-payment is-${order.paymentStatus}`}>{paymentLabels[order.paymentStatus] ?? order.paymentStatus} · {paymentMethodLabels[order.paymentMethod] ?? order.paymentMethod.replaceAll("_", " ")}</p>
                 <ul className="account-order-items">{order.items.map((item, index) => <li key={`${item.name}-${index}`}><span>{item.name} <b>× {item.quantity}</b></span><strong>{new Intl.NumberFormat("fr-FR").format(item.lineTotalCfa)} FCFA</strong></li>)}</ul>
               </article>)}
       </section>

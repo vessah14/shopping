@@ -1914,3 +1914,14 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 @media (max-width: 700px) {
   .hero-edition, .category-index, .section-index { display: none; }
 }
+
+/* Account orders: card layout + payment badges */
+.account-orders article.account-order { margin-top: 12px; padding: 16px; border: 1px solid #eee5db; border-radius: 6px; background: #faf6f0; }
+.account-order-heading > div { display: grid; gap: 4px; }
+.account-order-heading > div:last-child { text-align: right; }
+.account-orders .account-order-heading strong { font-size: 14px; }
+.account-order-payment { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #f3e6d8; font-weight: 600; }
+.account-order-payment.is-paid, .account-order-payment.is-confirmed { background: #e3f1e6; color: #2f6b3d; }
+.account-order-payment.is-failed { background: #f8e1dc; color: #a3321f; }
+.account-order-payment.is-refunded { background: #e7e7ef; color: #4a4a68; }
+.account-order-items li { padding-top: 10px; font-size: 13px; }
