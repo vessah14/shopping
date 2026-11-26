@@ -73,7 +73,7 @@ public sealed record CustomerOrderDto(
     DateTime CreatedAt,
     IReadOnlyList<CustomerOrderItemDto> Items);
 
-public sealed record CustomerOrderItemDto(string Name, int Quantity, int LineTotalCfa, string Size = "", string Color = "");
+public sealed record CustomerOrderItemDto(string Name, int Quantity, int LineTotalCfa, string Size = "", string Color = "", string Slug = "", string? Image = null);
 
 public sealed record OrderStatusDto(Guid Id, string Status, string PaymentStatus, int TotalCfa);
 

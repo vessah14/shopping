@@ -4,9 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authClient } from "../../lib/auth-client";
+import { productImage } from "../../data/store";
+import StoreImage from "../ui/StoreImage";
 
 type AccountDashboardProps = { name: string; email: string; isAdmin: boolean };
-type CustomerOrder = { id: string; status: string; paymentMethod: string; paymentStatus: string; subtotalCfa: number; createdAt: string; items: { name: string; quantity: number; lineTotalCfa: number }[] };
+type CustomerOrder = { id: string; status: string; paymentMethod: string; paymentStatus: string; subtotalCfa: number; totalCfa?: number; createdAt: string; items: { name: string; quantity: number; lineTotalCfa: number; size?: string; color?: string; slug?: string; image?: string | null }[] };
+const formatCfa = (value: number) => `${new Intl.NumberFormat("fr-FR").format(value)} FCFA`;
 
 const orderLabels: Record<string, string> = {
   pending: "À confirmer", confirmed: "Confirmée", preparing: "En préparation",
@@ -103,9 +106,25 @@ export default function AccountDashboard({ name, email, isAdmin }: AccountDashbo
             : orders.length === 0
               ? <p>Vos commandes apparaîtront ici.</p>
               : visibleOrders.map((order) => <article className="account-order" key={order.id}>
-                <div className="account-order-heading"><div><strong>Commande #{order.id.slice(0, 8).toUpperCase()}</strong><span>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium" }).format(new Date(order.createdAt))}</span></div><div><strong>{new Intl.NumberFormat("fr-FR").format(order.subtotalCfa)} FCFA</strong><span>{orderLabels[order.status] ?? order.status}</span></div></div>
-                <p className={`account-order-payment is-${order.paymentStatus}`}>{paymentLabels[order.paymentStatus] ?? order.paymentStatus} · {paymentMethodLabels[order.paymentMethod] ?? order.paymentMethod.replaceAll("_", " ")}</p>
-                <ul className="account-order-items">{order.items.map((item, index) => <li key={`${item.name}-${index}`}><span>{item.name} <b>× {item.quantity}</b></span><strong>{new Intl.NumberFormat("fr-FR").format(item.lineTotalCfa)} FCFA</strong></li>)}</ul>
+                <header className="account-order-top">
+                  <div><strong>Commande #{order.id.slice(0, 8).toUpperCase()}</strong><span>{new Intl.DateTimeFormat("fr-FR", { dateStyle: "long" }).format(new Date(order.createdAt))}</span></div>
+                  <span className="account-order-status">{orderLabels[order.status] ?? order.status}</span>
+                </header>
+                <ul className="account-order-products">{order.items.map((item, index) => {
+                  const details = [item.size && `Taille ${item.size}`, item.color, `Qté ${item.quantity}`].filter(Boolean).join(" · ");
+                  const body = <>
+                    {item.image
+                      ? <StoreImage className="account-order-thumb" src={productImage(item.image, 240)} alt="" sizes="64px" />
+                      : <span className="account-order-thumb" aria-hidden="true" />}
+                    <span className="account-order-product-text"><strong>{item.name}</strong><small>{details}</small></span>
+                    <b>{formatCfa(item.lineTotalCfa)}</b>
+                  </>;
+                  return <li key={`${item.name}-${index}`}>{item.slug ? <Link href={`/produit/${item.slug}`}>{body}</Link> : <div>{body}</div>}</li>;
+                })}</ul>
+                <footer className="account-order-bottom">
+                  <span className={`account-order-payment is-${order.paymentStatus}`}>{paymentLabels[order.paymentStatus] ?? order.paymentStatus} · {paymentMethodLabels[order.paymentMethod] ?? order.paymentMethod.replaceAll("_", " ")}</span>
+                  <span className="account-order-total">Total <strong>{formatCfa(order.totalCfa ?? order.subtotalCfa)}</strong></span>
+                </footer>
               </article>)}
         {!ordersLoading && !ordersMessage && pageCount > 1 && <nav className="account-pagination" aria-label="Pagination des commandes">
           <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>← Précédent</button>

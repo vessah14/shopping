@@ -104,10 +104,12 @@ export async function GET(request: NextRequest) {
               o.subtotal_cfa AS "subtotalCfa", o.created_at AS "createdAt",
               COALESCE(json_agg(json_build_object(
                 'slug', i.product_slug, 'name', i.product_name, 'unitPriceCfa', i.unit_price_cfa,
-                'quantity', i.quantity, 'lineTotalCfa', i.line_total_cfa
+                'quantity', i.quantity, 'lineTotalCfa', i.line_total_cfa,
+                'size', i.size, 'color', i.color, 'image', p.image
               )) FILTER (WHERE i.id IS NOT NULL), '[]'::json) AS items
        FROM store_orders o
        LEFT JOIN store_order_items i ON i.order_id = o.id
+       LEFT JOIN store_products p ON p.slug = i.product_slug
        GROUP BY o.id
        ORDER BY o.created_at DESC
        LIMIT 250`,

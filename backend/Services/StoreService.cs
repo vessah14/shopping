@@ -56,10 +56,11 @@ public sealed class StoreService(
                    o.subtotal_cfa, o.delivery_fee_cfa, o.total_cfa, o.delivery_zone, o.created_at,
                    COALESCE(json_agg(json_build_object(
                        'name', i.product_name, 'quantity', i.quantity, 'lineTotalCfa', i.line_total_cfa,
-                       'size', i.size, 'color', i.color
+                       'size', i.size, 'color', i.color, 'slug', i.product_slug, 'image', p.image
                    )) FILTER (WHERE i.id IS NOT NULL), '[]'::json)::text AS items
             FROM store_orders o
             LEFT JOIN store_order_items i ON i.order_id = o.id
+            LEFT JOIN store_products p ON p.slug = i.product_slug
             WHERE o.customer_id = @customerId
             GROUP BY o.id
             ORDER BY o.created_at DESC
